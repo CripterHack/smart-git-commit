@@ -21,6 +21,7 @@ from collections import defaultdict
 import http.client
 import urllib.request
 import urllib.parse
+import socket
 
 # Set up logging
 logging.basicConfig(
@@ -108,6 +109,24 @@ class GitChange:
             
         # Default to the first directory name
         return parts[0]
+
+    @property
+    def is_formatting_change(self) -> bool:
+        """Determine if this change is likely just formatting."""
+        if not self.content_diff:
+            return False
+        
+        # Simple heuristics to detect formatting changes
+        formatting_indicators = [
+            # Only whitespace changes
+            self.content_diff.strip().startswith('diff') and all(line.startswith(('+', '-', ' ')) and line.strip() in ('', '+', '-') for line in self.content_diff.splitlines()[1:] if line and not line.startswith(('---', '+++', 'diff', 'index', '@@'))),
+            # Common formatter markers
+            'import format' in self.content_diff.lower(),
+            'prettier' in self.content_diff.lower(),
+            'fmt' in self.content_diff.lower() and len(self.content_diff) < 500
+        ]
+        
+        return any(formatting_indicators)
 
 
 @dataclass
@@ -207,19 +226,30 @@ class OllamaClient:
     
     def _get_host_connection(self) -> Tuple[str, int]:
         """Parse host string and return connection parameters."""
-        if self.host.startswith("http://"):
-            parsed_url = urllib.parse.urlparse(self.host)
-            host = parsed_url.netloc
-            port = parsed_url.port or 11434
-        elif self.host.startswith("https://"):
-            parsed_url = urllib.parse.urlparse(self.host)
-            host = parsed_url.netloc
-            port = parsed_url.port or 443
-        else:
-            host = self.host
-            port = 11434
+        try:
+            if self.host.startswith("http://"):
+                parsed_url = urllib.parse.urlparse(self.host)
+                host = parsed_url.netloc.split(':')[0]  # Extract only hostname part
+                port = parsed_url.port or 11434
+            elif self.host.startswith("https://"):
+                parsed_url = urllib.parse.urlparse(self.host)
+                host = parsed_url.netloc.split(':')[0]  # Extract only hostname part
+                port = parsed_url.port or 443
+            else:
+                host = self.host.split(':')[0]  # Handle case if port is included
+                port = 11434
             
-        return host, port
+            # Test connection before returning
+            socket.getaddrinfo(host, port)
+            return host, port
+        except Exception as e:
+            logger.warning(f"Connection error to {self.host}: {str(e)}")
+            # Fall back to localhost if specified host fails
+            if self.host != "localhost" and self.host != "http://localhost:11434":
+                logger.info("Trying localhost as fallback")
+                self.host = "http://localhost:11434"
+                return "localhost", 11434
+            raise
     
     def _get_available_models(self) -> List[str]:
         """Get a list of available models from Ollama."""
@@ -600,7 +630,7 @@ class SmartGitCommitWorkflow:
         4. The criteria for which files should be included
         
         Format each group as JSON:
-        {"type": "...", "name": "...", "description": "...", "criteria": "..."}
+        {{"type": "...", "name": "...", "description": "...", "criteria": "..."}}
         
         Separate each group with ---
         """

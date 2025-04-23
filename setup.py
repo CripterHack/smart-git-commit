@@ -13,13 +13,13 @@ with open(os.path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name="smart-git-commit",
-    version="0.1.0",
+    version="0.1.3",
     description="AI-powered Git commit workflow tool",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    author="Your Name",
-    author_email="your.email@example.com",
-    url="https://github.com/yourusername/smart-git-commit",
+    author="Edgar Zorrilla",
+    author_email="edgar@izignamx.com",
+    url="https://github.com/CripterHack/smart-git-commit",
     packages=find_packages(),
     py_modules=["smart_git_commit"],
     install_requires=[
