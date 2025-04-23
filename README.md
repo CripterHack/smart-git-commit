@@ -13,6 +13,45 @@ An AI-powered Git workflow tool that intelligently analyzes your changes, groups
 - 🎯 **Smart Change Importance**: Prioritizes changes based on impact analysis
 - 🧩 **Component Detection**: Identifies file components based on project structure
 
+## Prerequisites
+
+### Basic Requirements
+- Python 3.7+
+- Git (installed and available in PATH)
+
+### For AI-Powered Features (Optional)
+- [Ollama](https://ollama.ai) installed and running
+- At least one LLM model pulled in Ollama
+- Ollama server accessible (default: http://localhost:11434)
+
+## Ollama Setup
+
+To use the AI-powered features:
+
+1. **Install Ollama**:
+   - Download from [ollama.ai](https://ollama.ai/download)
+   - Follow the installation instructions for your platform
+
+2. **Start the Ollama server**:
+   ```bash
+   ollama serve
+   ```
+
+3. **Pull at least one model**:
+   ```bash
+   # Pull a recommended model
+   ollama pull llama3
+   
+   # Or a smaller model
+   ollama pull gemma:2b
+   ```
+
+4. **Verify your installation**:
+   ```bash
+   # List available models
+   ollama list
+   ```
+
 ## Installation
 
 ```bash
@@ -20,14 +59,8 @@ An AI-powered Git workflow tool that intelligently analyzes your changes, groups
 pip install smart-git-commit
 
 # Or install directly from the repository
-pip install git+https://github.com/yourusername/smart-git-commit.git
+pip install git+https://github.com/CripterHack/smart-git-commit.git
 ```
-
-## Requirements
-
-- Python 3.7+
-- Git
-- Ollama (optional, for AI-powered features)
 
 ## Usage
 
@@ -46,6 +79,9 @@ smart-git-commit --non-interactive
 
 # Specify a repository path
 smart-git-commit --repo-path /path/to/your/repository
+
+# Specify a custom Ollama server
+smart-git-commit --ollama-host http://custom-ollama-server:11434
 
 # See all options
 smart-git-commit --help
@@ -183,6 +219,24 @@ smart-git-commit --repo-path /path/to/your/repository
 
 ## Troubleshooting
 
+### Common Issues
+
+#### Error: "No models found in Ollama"
+- Make sure Ollama is running: `ollama serve`
+- Check that you have at least one model installed: `ollama list`
+- If no models are available, pull one: `ollama pull llama3`
+
+#### Error: "Failed to get models from Ollama API"
+- Check that the Ollama server is accessible on the specified host
+- Default location is http://localhost:11434
+- Verify your network connection allows access to the Ollama server
+- Try restarting the Ollama server: `ollama serve`
+
+#### Error: "Failed to generate text with Ollama"
+- The model might be too large for your hardware
+- Try a smaller model like gemma:2b or tinyllama
+- Check Ollama server logs for any errors or memory issues
+
 ### Ollama Connection Issues
 
 If you encounter issues connecting to Ollama:
@@ -190,6 +244,7 @@ If you encounter issues connecting to Ollama:
 1. Ensure Ollama is running: `ollama serve`
 2. Check that you have at least one model: `ollama list`
 3. Try specifying the host explicitly: `--ollama-host http://localhost:11434`
+4. Check for firewall or network issues if using a remote server
 
 ### Falling Back to Non-AI Mode
 
@@ -199,6 +254,14 @@ If AI analysis isn't working properly:
 # Run with fallback mode explicitly
 smart-git-commit --no-ai
 ```
+
+## System Requirements
+
+- **Minimum**: Python 3.7+, Git, 4GB RAM
+- **Recommended for AI mode**:
+  - 8GB+ RAM
+  - An Ollama-compatible system
+  - Internet connection (for initial model download)
 
 ## Contributing
 
@@ -218,3 +281,18 @@ MIT
 
 - [Conventional Commits](https://www.conventionalcommits.org/) for the commit message format
 - [Ollama](https://github.com/ollama/ollama) for the local LLM capabilities
+
+# Changelog
+
+## 0.1.3 (2025-04-23)
+- Fix several issues related to ollama
+
+## 0.1.2 (2025-04-23)
+- Update meta data
+
+## 0.1.1 (2025-04-23)
+- Fixed bug in component detection for subdirectories
+- Improved error handling for Ollama connection issues
+
+## 0.1.0 (2025-04-23)
+- Initial release
