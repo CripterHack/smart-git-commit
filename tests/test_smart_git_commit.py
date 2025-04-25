@@ -10,6 +10,8 @@ import subprocess
 from unittest import TestCase, mock
 from typing import List, Optional
 from collections import defaultdict
+import socket
+import http.client
 
 # Add parent directory to path to import the main module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -64,6 +66,54 @@ class TestGitChange(TestCase):
         
         change = GitChange(status="M", filename="tests/test_main.py")
         self.assertEqual(change.component, "tests")
+    
+    def test_is_formatting_change(self):
+        """Test that formatting changes are correctly detected."""
+        # Test with no diff (should not be a formatting change)
+        change = GitChange(status="M", filename="example.py", content_diff=None)
+        self.assertFalse(change.is_formatting_change)
+        
+        # Test with non-formatting diff
+        non_formatting_diff = """diff --git a/example.py b/example.py
+index 1234567..abcdefg 100644
+--- a/example.py
++++ b/example.py
+@@ -1,3 +1,4 @@
+ def hello():
+     print("Hello")
++    print("World")
+ hello()
+"""
+        change = GitChange(status="M", filename="example.py", content_diff=non_formatting_diff)
+        self.assertFalse(change.is_formatting_change)
+        
+        # Test with whitespace-only diff (should be a formatting change)
+        whitespace_diff = """diff --git a/example.py b/example.py
+index 1234567..abcdefg 100644
+--- a/example.py
++++ b/example.py
+@@ -1,3 +1,3 @@
+ def hello():
+-    print("Hello")
++    print("Hello")
+ hello()
+"""
+        change = GitChange(status="M", filename="example.py", content_diff=whitespace_diff)
+        self.assertTrue(change.is_formatting_change)
+        
+        # Test with prettier marker in diff
+        prettier_diff = """diff --git a/example.js b/example.js
+index 1234567..abcdefg 100644
+--- a/example.js
++++ b/example.js
+@@ -1,3 +1,3 @@
+-function hello() { console.log("Hello"); }
++// Prettier formatting
++function hello() { console.log("Hello"); }
+ hello();
+"""
+        change = GitChange(status="M", filename="example.js", content_diff=prettier_diff)
+        self.assertTrue(change.is_formatting_change)
 
 
 class TestCommitGroup(TestCase):
@@ -178,6 +228,27 @@ class TestGitCommitWorkflow(TestCase):
             self.assertIn("main.py", filenames)
             self.assertIn("new_file.py", filenames)
     
+    def test_timeout_propagation(self, mock_ollama):
+        """Test that timeout parameter is propagated to OllamaClient."""
+        # Set up mock for OllamaClient
+        mock_ollama_instance = mock.MagicMock()
+        mock_ollama.return_value = mock_ollama_instance
+        
+        # Create workflow with custom timeout
+        custom_timeout = 30
+        workflow = smart_git_commit.SmartGitCommitWorkflow(
+            use_ai=True, 
+            timeout=custom_timeout
+        )
+        
+        # Verify OllamaClient was created with the right timeout
+        mock_ollama.assert_called_once()
+        _, kwargs = mock_ollama.call_args
+        self.assertEqual(kwargs['timeout'], custom_timeout)
+        
+        # Verify timeout is stored in the workflow
+        self.assertEqual(workflow.timeout, custom_timeout)
+    
     def test_rule_based_grouping(self, mock_ollama):
         """Test that rule-based grouping works correctly."""
         with TestMockGitRepository() as repo_path:
@@ -225,6 +296,142 @@ class TestGitCommitWorkflow(TestCase):
                 component = group.changes[0].component
                 for change in group.changes:
                     self.assertEqual(change.component, component)
+    
+    def test_renamed_file_handling(self, mock_ollama):
+        """Test handling of renamed files in git status output."""
+        # Create a mock workflow
+        workflow = smart_git_commit.SmartGitCommitWorkflow(use_ai=False)
+        
+        # Mock the _run_git_command to return appropriate responses
+        def mock_git_command(args):
+            if args[0] == "status":
+                return "R  old_name.py -> new_name.py\n", 0
+            elif args[0] == "diff":
+                return "diff --git a/old_name.py b/new_name.py\nindex 1234567..abcdefg 100644\n--- a/old_name.py\n+++ b/new_name.py\n", 0
+            return "", 0
+            
+        workflow._run_git_command = mock.MagicMock(side_effect=mock_git_command)
+        
+        # Call load_changes
+        workflow.load_changes()
+        
+        # Check that the renamed file is properly handled
+        self.assertEqual(len(workflow.changes), 1)
+        change = workflow.changes[0]
+        self.assertEqual(change.status, "R")
+        self.assertEqual(change.filename, "new_name.py")
+        self.assertIsNotNone(change.content_diff)
+        self.assertIn("diff --git", change.content_diff)
+    
+    def test_subdirectory_prefixes(self, mock_ollama):
+        """Test handling of files with directory prefixes."""
+        # Create a mock workflow
+        workflow = smart_git_commit.SmartGitCommitWorkflow(use_ai=False)
+        
+        # Mock the _run_git_command to return appropriate responses
+        def mock_git_command(args):
+            if args[0] == "status":
+                return "M  backend/utils.py\n?? backend/__pycache__/\n", 0
+            elif args[0] == "diff" and args[2] == "backend/utils.py":
+                return "diff --git a/backend/utils.py b/backend/utils.py\nindex 1234567..abcdefg 100644\n--- a/backend/utils.py\n+++ b/backend/utils.py\n@@ -1,3 +1,5 @@\n def util_func():\n     pass\n+\ndef another_func():\n+    return True\n", 0
+            return "", 0
+            
+        workflow._run_git_command = mock.MagicMock(side_effect=mock_git_command)
+        
+        # Call load_changes
+        workflow.load_changes()
+        
+        # Check that the files are properly handled
+        self.assertEqual(len(workflow.changes), 2)
+        
+        # Check file paths and statuses
+        modified_change = next(c for c in workflow.changes if c.status == "M")
+        untracked_change = next(c for c in workflow.changes if c.status == "??")
+        
+        self.assertEqual(modified_change.filename, "backend/utils.py")
+        self.assertEqual(untracked_change.filename, "backend/__pycache__/")
+        
+        # Check diff content
+        self.assertIsNotNone(modified_change.content_diff)
+        self.assertIn("another_func", modified_change.content_diff)
+        self.assertIsNone(untracked_change.content_diff)  # Untracked files don't have diffs
+    
+    @mock.patch('os.path.isdir')
+    @mock.patch('smart_git_commit.SmartGitCommitWorkflow._run_git_command')
+    def test_git_dir_discovery(self, mock_run_git, mock_isdir, _):
+        """Test discovery of git directory for commit message file."""
+        # Setup the mock workflow
+        workflow = smart_git_commit.SmartGitCommitWorkflow(repo_path="/test/repo", use_ai=False)
+        
+        # Setup mocks for the git directory discovery path
+        mock_isdir.side_effect = lambda path: path == "/test/repo/.git"
+        
+        # Create a commit group to test with
+        group = smart_git_commit.CommitGroup(
+            name="Test commit", 
+            commit_type=smart_git_commit.CommitType.FEAT
+        )
+        group.add_change(smart_git_commit.GitChange(status="M", filename="test.py"))
+        workflow.commit_groups = [group]
+        
+        # Mock the file operations that would happen in execute_commits
+        with mock.patch('builtins.open', mock.mock_open()) as mock_file:
+            with mock.patch('os.path.exists', return_value=True):
+                with mock.patch('os.remove'):
+                    # Mock successful git commit
+                    mock_run_git.return_value = ("Committed", 0)
+                    
+                    # Execute in non-interactive mode
+                    workflow.execute_commits(interactive=False)
+                    
+                    # Verify git directory was correctly used
+                    mock_file.assert_called_once()
+                    file_path = mock_file.call_args[0][0]
+                    self.assertEqual(file_path, "/test/repo/.git/COMMIT_EDITMSG")
+
+
+class TestOllamaClient(TestCase):
+    """Tests for the OllamaClient class."""
+    
+    @mock.patch('socket.getaddrinfo')
+    @mock.patch('http.client.HTTPConnection')
+    def test_connection_timeout_handling(self, mock_http_conn, mock_getaddrinfo):
+        """Test handling of connection timeouts."""
+        # Setup mocks
+        mock_getaddrinfo.side_effect = socket.timeout("Connection timed out")
+        
+        # Test with non-localhost host that will trigger the fallback
+        with self.assertRaises(RuntimeError):
+            client = smart_git_commit.OllamaClient(host="http://nonexistent-host:11434", timeout=1)
+            
+        # Verify the fallback was attempted
+        self.assertEqual(mock_getaddrinfo.call_count, 2)  # First call fails, second for localhost
+    
+    @mock.patch('subprocess.Popen')
+    @mock.patch('socket.getaddrinfo')
+    @mock.patch('http.client.HTTPConnection')
+    def test_models_from_cli_fallback(self, mock_http_conn, mock_getaddrinfo, mock_popen):
+        """Test fallback to CLI for model list when API fails."""
+        # Setup HTTP connection mock to fail
+        mock_conn = mock.MagicMock()
+        mock_http_conn.return_value = mock_conn
+        mock_conn.getresponse.side_effect = http.client.HTTPException("API error")
+        
+        # Setup subprocess mock for CLI fallback
+        mock_process = mock.MagicMock()
+        mock_popen.return_value = mock_process
+        mock_process.returncode = 0
+        mock_process.communicate.return_value = ("NAME  SIZE  PARAMS\nllama3 1.1G  123M\n", "")
+        
+        # Set up socket mock to succeed
+        mock_getaddrinfo.return_value = [('AF_INET', 1, 1, '', ('127.0.0.1', 11434))]
+        
+        # Create a client that will need to fall back to CLI
+        with mock.patch('builtins.input', return_value="1"):  # Mock model selection input
+            client = smart_git_commit.OllamaClient(timeout=1)
+            
+            # Verify the model was obtained from CLI
+            self.assertEqual(client.available_models, ["llama3"])
 
 
 if __name__ == "__main__":

@@ -197,32 +197,39 @@ class CommitGroup:
 class OllamaClient:
     """Client for interacting with Ollama API with GPU acceleration."""
     
-    def __init__(self, host: str = "http://localhost:11434", model: Optional[str] = None):
+    def __init__(self, host: str = "http://localhost:11434", model: Optional[str] = None, timeout: int = 10):
         """
         Initialize the Ollama client.
         
         Args:
             host: Host for Ollama API
             model: Model to use for Ollama, if None will prompt user to select one
+            timeout: Timeout in seconds for HTTP requests
         """
         self.host = host
         self.headers = {"Content-Type": "application/json"}
-        self.available_models = self._get_available_models()
+        self.timeout = timeout
         
-        if not self.available_models:
-            logger.warning("No models found in Ollama. Make sure Ollama is running.")
-            raise RuntimeError("No Ollama models available")
+        try:
+            self.available_models = self._get_available_models()
             
-        if model is None:
-            self.model = self._select_model()
-        else:
-            if model not in self.available_models:
-                logger.warning(f"Model {model} not found. Available models: {', '.join(self.available_models)}")
+            if not self.available_models:
+                logger.warning("No models found in Ollama. Make sure Ollama is running.")
+                raise RuntimeError("No Ollama models available")
+                
+            if model is None:
                 self.model = self._select_model()
             else:
-                self.model = model
-                
-        logger.info(f"Using Ollama model: {self.model}")
+                if model not in self.available_models:
+                    logger.warning(f"Model {model} not found. Available models: {', '.join(self.available_models)}")
+                    self.model = self._select_model()
+                else:
+                    self.model = model
+                    
+            logger.info(f"Using Ollama model: {self.model}")
+        except Exception as e:
+            logger.error(f"Error initializing Ollama client: {str(e)}")
+            raise
     
     def _get_host_connection(self) -> Tuple[str, int]:
         """Parse host string and return connection parameters."""
@@ -239,9 +246,25 @@ class OllamaClient:
                 host = self.host.split(':')[0]  # Handle case if port is included
                 port = 11434
             
-            # Test connection before returning
+            # Test connection before returning with a short timeout
+            socket.setdefaulttimeout(self.timeout)
             socket.getaddrinfo(host, port)
             return host, port
+        except socket.gaierror as e:
+            logger.warning(f"DNS resolution error for {self.host}: {str(e)}")
+            # Fall back to localhost if specified host fails
+            if self.host != "localhost" and self.host != "http://localhost:11434":
+                logger.info("Trying localhost as fallback")
+                self.host = "http://localhost:11434"
+                return "localhost", 11434
+            raise
+        except socket.timeout:
+            logger.warning(f"Connection timeout to {self.host}")
+            if self.host != "localhost" and self.host != "http://localhost:11434":
+                logger.info("Trying localhost as fallback")
+                self.host = "http://localhost:11434"
+                return "localhost", 11434
+            raise RuntimeError(f"Connection timeout to {self.host}")
         except Exception as e:
             logger.warning(f"Connection error to {self.host}: {str(e)}")
             # Fall back to localhost if specified host fails
@@ -255,9 +278,14 @@ class OllamaClient:
         """Get a list of available models from Ollama."""
         try:
             host, port = self._get_host_connection()
-            conn = http.client.HTTPConnection(host, port)
+            conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
             conn.request("GET", "/api/tags")
             response = conn.getresponse()
+            
+            if response.status != 200:
+                logger.warning(f"Failed to get models: HTTP {response.status} {response.reason}")
+                return self._get_models_from_cli()
+                
             data = json.loads(response.read().decode())
             
             # Different Ollama API versions might return models differently
@@ -271,6 +299,15 @@ class OllamaClient:
                 # Try to run ollama list directly if API doesn't work
                 return self._get_models_from_cli()
                 
+        except json.JSONDecodeError:
+            logger.warning("Invalid JSON response from Ollama API")
+            return self._get_models_from_cli()
+        except http.client.HTTPException as e:
+            logger.warning(f"HTTP error when connecting to Ollama: {str(e)}")
+            return self._get_models_from_cli()
+        except socket.timeout:
+            logger.warning("Connection timeout when retrieving models from Ollama API")
+            return self._get_models_from_cli()
         except Exception as e:
             logger.warning(f"Failed to get models from Ollama API: {str(e)}")
             # Try command-line fallback
@@ -285,8 +322,9 @@ class OllamaClient:
                 stderr=subprocess.PIPE,
                 text=True
             )
-            stdout, stderr = process.communicate()
+            stdout, stderr = process.communicate(timeout=self.timeout)
             if process.returncode != 0:
+                logger.warning(f"Ollama CLI failed with error: {stderr}")
                 return []
                 
             models = []
@@ -297,7 +335,14 @@ class OllamaClient:
                     if parts:
                         models.append(parts[0])
             return models
-        except Exception:
+        except subprocess.TimeoutExpired:
+            logger.warning("Timeout running 'ollama list' command")
+            return []
+        except FileNotFoundError:
+            logger.warning("Ollama command not found in PATH")
+            return []
+        except Exception as e:
+            logger.warning(f"Error getting models from CLI: {str(e)}")
             return []
     
     def _select_model(self) -> str:
@@ -321,12 +366,16 @@ class OllamaClient:
                 if selection in self.available_models:
                     return selection
                 print("Please enter a valid model number or name")
+            except KeyboardInterrupt:
+                # If user interrupts, use first model as default
+                print("\nInterrupted, using first available model")
+                return self.available_models[0]
     
     def generate(self, prompt: str, system_prompt: str = "", max_tokens: int = 2000) -> str:
         """Generate text using Ollama."""
         try:
             host, port = self._get_host_connection()
-            conn = http.client.HTTPConnection(host, port)
+            conn = http.client.HTTPConnection(host, port, timeout=self.timeout)
             
             data = {
                 "model": self.model,
@@ -338,9 +387,23 @@ class OllamaClient:
             
             conn.request("POST", "/api/generate", json.dumps(data), self.headers)
             response = conn.getresponse()
+            
+            if response.status != 200:
+                logger.warning(f"Failed to generate text: HTTP {response.status} {response.reason}")
+                return ""
+                
             result = json.loads(response.read().decode())
             
             return result.get("response", "")
+        except json.JSONDecodeError:
+            logger.warning("Invalid JSON response from Ollama API during generation")
+            return ""
+        except http.client.HTTPException as e:
+            logger.warning(f"HTTP error when generating text: {str(e)}")
+            return ""
+        except socket.timeout:
+            logger.warning("Timeout when generating text with Ollama")
+            return ""
         except Exception as e:
             logger.warning(f"Failed to generate text with Ollama: {str(e)}")
             return ""
@@ -350,7 +413,7 @@ class SmartGitCommitWorkflow:
     """Manages the workflow for analyzing, grouping, and committing changes with AI assistance."""
     
     def __init__(self, repo_path: str = ".", ollama_host: str = "http://localhost:11434", 
-                 ollama_model: Optional[str] = None, use_ai: bool = True):
+                 ollama_model: Optional[str] = None, use_ai: bool = True, timeout: int = 10):
         """
         Initialize the workflow.
         
@@ -359,16 +422,18 @@ class SmartGitCommitWorkflow:
             ollama_host: Host for Ollama API
             ollama_model: Model to use for Ollama, if None will prompt user to select
             use_ai: Whether to use AI-powered analysis
+            timeout: Timeout in seconds for HTTP requests to Ollama
         """
         self.repo_path = repo_path
         self.changes: List[GitChange] = []
         self.commit_groups: List[CommitGroup] = []
         self.use_ai = use_ai
         self.ollama = None
+        self.timeout = timeout
         
         if use_ai:
             try:
-                self.ollama = OllamaClient(host=ollama_host, model=ollama_model)
+                self.ollama = OllamaClient(host=ollama_host, model=ollama_model, timeout=timeout)
             except Exception as e:
                 logger.warning(f"Failed to initialize Ollama client: {str(e)}")
                 logger.info("Falling back to rule-based analysis")
@@ -447,6 +512,10 @@ class SmartGitCommitWorkflow:
                 
             status = line[:2].strip()
             filename = line[3:].strip()
+            
+            # Remove any leading "backend/" or similar prefix that might come from running in a subdirectory
+            if " -> " in filename:  # Handle renamed files
+                old_path, filename = filename.split(" -> ")
             
             # Get diff content for modified files
             content_diff = None
@@ -884,15 +953,30 @@ class SmartGitCommitWorkflow:
                     
             # Execute the commit
             # Write commit message with UTF-8 encoding explicitly
-            commit_msg_path = os.path.join(self.repo_path, ".git", "COMMIT_EDITMSG")
             try:
+                # First make sure .git directory exists
+                git_dir = os.path.join(self.repo_path, ".git")
+                if not os.path.isdir(git_dir):
+                    # Try to find the git directory
+                    stdout, _ = self._run_git_command(["rev-parse", "--git-dir"])
+                    git_dir = stdout.strip()
+                    if not os.path.isdir(git_dir):
+                        git_dir = os.path.join(self.repo_path, git_dir)
+
+                # Now create the commit message file
+                commit_msg_path = os.path.join(git_dir, "COMMIT_EDITMSG")
+                
                 with open(commit_msg_path, "w", encoding='utf-8') as f:
                     f.write(commit_message)
                     
-                stdout, code = self._run_git_command(["commit", "-F", os.path.join(".git", "COMMIT_EDITMSG")])
+                stdout, code = self._run_git_command(["commit", "-F", commit_msg_path])
+            except Exception as e:
+                logger.error(f"Failed to create or use commit message file: {str(e)}")
+                # Try direct commit as fallback
+                stdout, code = self._run_git_command(["commit", "-m", commit_message])
             finally:
                 # Clean up the temporary commit message file
-                if os.path.exists(commit_msg_path):
+                if 'commit_msg_path' in locals() and os.path.exists(commit_msg_path):
                     try:
                         os.remove(commit_msg_path)
                     except OSError as e:
@@ -962,6 +1046,7 @@ def main() -> int:
     parser.add_argument("--ollama-host", help="Host for Ollama API", default="http://localhost:11434")
     parser.add_argument("--ollama-model", help="Model to use for Ollama (will prompt if not specified)")
     parser.add_argument("--no-ai", action="store_true", help="Disable AI-powered analysis")
+    parser.add_argument("--timeout", type=int, help="Timeout in seconds for HTTP requests", default=10)
     args = parser.parse_args()
     
     try:
@@ -969,7 +1054,8 @@ def main() -> int:
             repo_path=args.repo_path,
             ollama_host=args.ollama_host,
             ollama_model=args.ollama_model,
-            use_ai=not args.no_ai
+            use_ai=not args.no_ai,
+            timeout=args.timeout
         )
         
         workflow.load_changes()
