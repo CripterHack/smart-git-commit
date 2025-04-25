@@ -284,6 +284,9 @@ MIT
 
 # Changelog
 
+## 0.1.4 (2025-04-25)
+- UnicodeDecodeError fixed
+
 ## 0.1.3 (2025-04-23)
 - Fix several issues related to ollama
 
