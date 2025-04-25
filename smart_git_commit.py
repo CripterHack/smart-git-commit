@@ -413,7 +413,8 @@ class SmartGitCommitWorkflow:
     """Manages the workflow for analyzing, grouping, and committing changes with AI assistance."""
     
     def __init__(self, repo_path: str = ".", ollama_host: str = "http://localhost:11434", 
-                 ollama_model: Optional[str] = None, use_ai: bool = True, timeout: int = 10):
+                 ollama_model: Optional[str] = None, use_ai: bool = True, timeout: int = 10,
+                 skip_hooks: bool = False):
         """
         Initialize the workflow.
         
@@ -423,6 +424,7 @@ class SmartGitCommitWorkflow:
             ollama_model: Model to use for Ollama, if None will prompt user to select
             use_ai: Whether to use AI-powered analysis
             timeout: Timeout in seconds for HTTP requests to Ollama
+            skip_hooks: Whether to skip git hooks when committing
         """
         self.repo_path = repo_path
         self.changes: List[GitChange] = []
@@ -430,6 +432,14 @@ class SmartGitCommitWorkflow:
         self.use_ai = use_ai
         self.ollama = None
         self.timeout = timeout
+        self.skip_hooks = skip_hooks
+        
+        # Verify if we're in a git repository first
+        if not self._is_git_repository():
+            raise RuntimeError(f"Directory '{os.path.abspath(repo_path)}' is not a git repository. Please run from a valid git repository.")
+        
+        # Check for pre-commit hooks
+        self.has_precommit_hooks = self._check_for_precommit_hooks()
         
         if use_ai:
             try:
@@ -438,7 +448,15 @@ class SmartGitCommitWorkflow:
                 logger.warning(f"Failed to initialize Ollama client: {str(e)}")
                 logger.info("Falling back to rule-based analysis")
                 self.use_ai = False
-        
+    
+    def _is_git_repository(self) -> bool:
+        """Check if the current directory is a git repository."""
+        try:
+            result, code = self._run_git_command(["rev-parse", "--is-inside-work-tree"])
+            return code == 0 and result.strip() == "true"
+        except Exception:
+            return False
+                
     def _run_git_command(self, args: List[str]) -> Tuple[str, int]:
         """Run a git command and return stdout and return code."""
         process = subprocess.Popen(
@@ -454,6 +472,112 @@ class SmartGitCommitWorkflow:
         if process.returncode != 0 and stderr:
             logger.warning(f"Git command failed: {stderr}")
         return stdout, process.returncode
+    
+    def _get_git_root(self) -> str:
+        """Get the root directory of the git repository."""
+        try:
+            root, code = self._run_git_command(["rev-parse", "--show-toplevel"])
+            if code != 0:
+                return self.repo_path
+            return root.strip()
+        except Exception:
+            return self.repo_path
+            
+    def _get_relative_path(self, path: str) -> str:
+        """
+        Get path relative to git repository root.
+        This avoids duplicating directory prefixes when running from subdirectories.
+        """
+        git_root = self._get_git_root()
+        repo_abs_path = os.path.abspath(self.repo_path)
+        
+        # If we're running from the git root, return the path as is
+        if os.path.samefile(git_root, repo_abs_path):
+            return path
+            
+        # If we're in a subdirectory, check if the path already includes that subdirectory
+        rel_path = os.path.relpath(repo_abs_path, git_root)
+        if path.startswith(rel_path + os.path.sep):
+            return path
+        else:
+            # Path is relative to git root, not current directory
+            return path
+
+    def load_changes(self) -> None:
+        """Load all modified and untracked files from git status."""
+        try:
+            stdout, code = self._run_git_command(["status", "--porcelain"])
+            if code != 0:
+                raise RuntimeError("Failed to get git status")
+                
+            # Verify we're in a git repository with proper status output
+            if not stdout and not self._is_git_repository():
+                raise RuntimeError("Not in a git repository. Please run from a valid git repository.")
+                
+            self.changes = []
+            # Detect tech stack but don't assign to unused variable
+            self._detect_tech_stack()
+            
+            for line in stdout.splitlines():
+                if not line.strip():
+                    continue
+                    
+                status = line[:2].strip()
+                filename = line[3:].strip()
+                
+                # Remove any leading "backend/" or similar prefix that might come from running in a subdirectory
+                if " -> " in filename:  # Handle renamed files
+                    old_path, filename = filename.split(" -> ")
+                
+                # Get the proper path relative to git root
+                filename = self._get_relative_path(filename)
+                
+                # Get diff content for modified files
+                content_diff = None
+                if status != "??":  # Not for untracked files
+                    diff_out, _ = self._run_git_command(["diff", "--", filename])
+                    content_diff = diff_out
+                    
+                # Create the change object
+                change = GitChange(status=status, filename=filename, content_diff=content_diff)
+                
+                # Detect language
+                _, ext = os.path.splitext(filename)
+                ext = ext.lower()
+                if ext in ['.py']:
+                    change.language = 'python'
+                elif ext in ['.js', '.jsx', '.ts', '.tsx']:
+                    change.language = 'javascript'
+                elif ext in ['.java']:
+                    change.language = 'java'
+                elif ext in ['.rb']:
+                    change.language = 'ruby'
+                elif ext in ['.go']:
+                    change.language = 'go'
+                elif ext in ['.rs']:
+                    change.language = 'rust'
+                elif ext in ['.php']:
+                    change.language = 'php'
+                elif ext in ['.cs']:
+                    change.language = 'csharp'
+                elif ext in ['.html', '.htm']:
+                    change.language = 'html'
+                elif ext in ['.css', '.scss', '.sass']:
+                    change.language = 'css'
+                
+                self.changes.append(change)
+                
+            logger.info(f"Loaded {len(self.changes)} changed files")
+            
+            # Analyze importance of each change
+            if self.use_ai:
+                self._analyze_changes_importance()
+        except RuntimeError as e:
+            logger.error(str(e))
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error loading changes: {str(e)}")
+            raise RuntimeError(f"Failed to load git changes: {str(e)}")
     
     def _detect_tech_stack(self) -> Dict[str, Any]:
         """Detect tech stack of the repository."""
@@ -496,68 +620,6 @@ class SmartGitCommitWorkflow:
                     
         return result
         
-    def load_changes(self) -> None:
-        """Load all modified and untracked files from git status."""
-        stdout, code = self._run_git_command(["status", "--porcelain"])
-        if code != 0:
-            raise RuntimeError("Failed to get git status")
-            
-        self.changes = []
-        # Detect tech stack but don't assign to unused variable
-        self._detect_tech_stack()
-        
-        for line in stdout.splitlines():
-            if not line.strip():
-                continue
-                
-            status = line[:2].strip()
-            filename = line[3:].strip()
-            
-            # Remove any leading "backend/" or similar prefix that might come from running in a subdirectory
-            if " -> " in filename:  # Handle renamed files
-                old_path, filename = filename.split(" -> ")
-            
-            # Get diff content for modified files
-            content_diff = None
-            if status != "??":  # Not for untracked files
-                diff_out, _ = self._run_git_command(["diff", "--", filename])
-                content_diff = diff_out
-                
-            # Create the change object
-            change = GitChange(status=status, filename=filename, content_diff=content_diff)
-            
-            # Detect language
-            _, ext = os.path.splitext(filename)
-            ext = ext.lower()
-            if ext in ['.py']:
-                change.language = 'python'
-            elif ext in ['.js', '.jsx', '.ts', '.tsx']:
-                change.language = 'javascript'
-            elif ext in ['.java']:
-                change.language = 'java'
-            elif ext in ['.rb']:
-                change.language = 'ruby'
-            elif ext in ['.go']:
-                change.language = 'go'
-            elif ext in ['.rs']:
-                change.language = 'rust'
-            elif ext in ['.php']:
-                change.language = 'php'
-            elif ext in ['.cs']:
-                change.language = 'csharp'
-            elif ext in ['.html', '.htm']:
-                change.language = 'html'
-            elif ext in ['.css', '.scss', '.sass']:
-                change.language = 'css'
-            
-            self.changes.append(change)
-            
-        logger.info(f"Loaded {len(self.changes)} changed files")
-        
-        # Analyze importance of each change
-        if self.use_ai:
-            self._analyze_changes_importance()
-    
     def _analyze_changes_importance(self) -> None:
         """Use AI to analyze the importance of changes."""
         try:
@@ -875,127 +937,207 @@ class SmartGitCommitWorkflow:
         # Default to feat for most changes
         return CommitType.FEAT
     
+    def _check_for_precommit_hooks(self) -> bool:
+        """Check if the repository has pre-commit hooks configured."""
+        # Check for .pre-commit-config.yaml file
+        precommit_config = os.path.join(self._get_git_root(), ".pre-commit-config.yaml")
+        if os.path.exists(precommit_config):
+            return True
+            
+        # Check for pre-commit hook file in the git hooks directory
+        hooks_dir = os.path.join(self._get_git_root(), ".git", "hooks")
+        pre_commit_hook = os.path.join(hooks_dir, "pre-commit")
+        if os.path.exists(pre_commit_hook):
+            # Check if it contains pre-commit references
+            try:
+                with open(pre_commit_hook, 'r', encoding='utf-8', errors='ignore') as f:
+                    content = f.read().lower()
+                    if 'pre-commit' in content or 'precommit' in content:
+                        return True
+            except Exception:
+                pass
+                
+        return False
+
     def execute_commits(self, interactive: bool = True) -> None:
         """Execute the commits for each group, with optional interactive mode."""
         if not self.commit_groups:
             logger.warning("No commit groups to execute")
             return
+
+        try:
+            # Check if git is properly configured for commits
+            user_name, code1 = self._run_git_command(["config", "user.name"])
+            user_email, code2 = self._run_git_command(["config", "user.email"])
             
-        for i, group in enumerate(self.commit_groups):
-            logger.info(f"Commit {i+1}/{len(self.commit_groups)}: {group.name} ({group.file_count} files)")
-            
-            # Show files to be committed
-            logger.info("Files to commit:")
-            for change in group.changes:
-                logger.info(f"  {change.status} {change.filename}")
+            if code1 != 0 or code2 != 0 or not user_name.strip() or not user_email.strip():
+                logger.error("Git is not properly configured. Please set user.name and user.email:")
+                logger.error("  git config --global user.name \"Your Name\"")
+                logger.error("  git config --global user.email \"your.email@example.com\"")
+                return
                 
-            # In interactive mode, allow customization of the commit
-            if interactive:
-                proceed = input("Proceed with this commit? [Y/n/e(dit)/s(kip)]: ").lower()
-                if proceed == "n":
-                    return  # Stop the entire process
-                if proceed == "s":
-                    continue  # Skip this commit
-                if proceed == "e":
-                    # Allow editing the commit details
-                    new_name = input(f"Commit name [{group.name}]: ") or group.name
-                    group.name = new_name
-                    
-                    commit_type_str = input(f"Commit type [{group.commit_type.value}]: ") or group.commit_type.value
-                    try:
-                        group.commit_type = CommitType(commit_type_str)
-                    except ValueError:
-                        logger.warning(f"Invalid commit type, using {group.commit_type.value}")
-                        
-                    description = input("Description (optional): ")
-                    if description:
-                        group.description = description
-                        
-                    issues = input("Issue numbers (comma-separated, optional): ")
-                    if issues:
-                        group.issues = set(issues.split(","))
-                        
-            # Stage the files
-            for change in group.changes:
-                _, code = self._run_git_command(["add", change.filename])
-                if code != 0:
-                    logger.error(f"Failed to stage {change.filename}")
+            # Check if pre-commit hooks might cause issues
+            if self.has_precommit_hooks and not self.skip_hooks:
+                # Try to detect if pre-commit module is available
+                _, pre_commit_check = self._run_git_command(["-c", "core.hooksPath=/dev/null", "status"])
+                if pre_commit_check != 0:
+                    # This indicates a potential issue with hooks
+                    logger.warning("Pre-commit hooks detected that might cause issues.")
                     if interactive:
-                        if input("Continue anyway? [y/N]: ").lower() != "y":
-                            return
-                    
-            # Verify what's staged
-            logger.info("Staged changes:")
-            self._run_git_command(["status", "--short"])
-            
-            # Generate or refine commit message with AI if available
-            if self.use_ai:
-                try:
-                    # Generate an AI-improved commit message
-                    ai_message = self._generate_ai_commit_message(group)
-                    if ai_message:
-                        group.description = ai_message
-                except Exception as e:
-                    logger.warning(f"Failed to generate AI commit message: {str(e)}")
-            
-            # Generate final commit message
-            commit_message = group.generate_commit_message()
-            
-            # Allow final review of commit message
-            if interactive:
-                print("\nCommit message:")
-                print(commit_message)
-                if input("\nProceed with commit? [Y/n]: ").lower() == "n":
-                    # Unstage everything
-                    self._run_git_command(["reset"])
-                    logger.info("Changes unstaged, commit canceled")
-                    return
-                    
-            # Execute the commit
-            # Write commit message with UTF-8 encoding explicitly
-            try:
-                # First make sure .git directory exists
-                git_dir = os.path.join(self.repo_path, ".git")
-                if not os.path.isdir(git_dir):
-                    # Try to find the git directory
-                    stdout, _ = self._run_git_command(["rev-parse", "--git-dir"])
-                    git_dir = stdout.strip()
-                    if not os.path.isdir(git_dir):
-                        git_dir = os.path.join(self.repo_path, git_dir)
-
-                # Now create the commit message file
-                commit_msg_path = os.path.join(git_dir, "COMMIT_EDITMSG")
+                        skip_hooks = input("Skip git hooks for these commits? [Y/n]: ").lower() != "n"
+                        self.skip_hooks = skip_hooks
+                    else:
+                        logger.warning("Using --skip-hooks to bypass pre-commit hooks. Install pre-commit if needed.")
+                        self.skip_hooks = True
                 
-                with open(commit_msg_path, "w", encoding='utf-8') as f:
-                    f.write(commit_message)
+            for i, group in enumerate(self.commit_groups):
+                logger.info(f"Commit {i+1}/{len(self.commit_groups)}: {group.name} ({group.file_count} files)")
+                
+                # Show files to be committed
+                logger.info("Files to commit:")
+                for change in group.changes:
+                    logger.info(f"  {change.status} {change.filename}")
                     
-                stdout, code = self._run_git_command(["commit", "-F", commit_msg_path])
-            except Exception as e:
-                logger.error(f"Failed to create or use commit message file: {str(e)}")
-                # Try direct commit as fallback
-                stdout, code = self._run_git_command(["commit", "-m", commit_message])
-            finally:
-                # Clean up the temporary commit message file
-                if 'commit_msg_path' in locals() and os.path.exists(commit_msg_path):
-                    try:
-                        os.remove(commit_msg_path)
-                    except OSError as e:
-                        logger.warning(f"Could not remove temporary commit message file: {e}")
-
-            if code != 0:
-                logger.error("Failed to commit changes")
+                # In interactive mode, allow customization of the commit
                 if interactive:
-                    if input("Continue with next commit? [y/N]: ").lower() != "y":
+                    proceed = input("Proceed with this commit? [Y/n/e(dit)/s(kip)]: ").lower()
+                    if proceed == "n":
+                        return  # Stop the entire process
+                    if proceed == "s":
+                        continue  # Skip this commit
+                    if proceed == "e":
+                        # Allow editing the commit details
+                        new_name = input(f"Commit name [{group.name}]: ") or group.name
+                        group.name = new_name
+                        
+                        commit_type_str = input(f"Commit type [{group.commit_type.value}]: ") or group.commit_type.value
+                        try:
+                            group.commit_type = CommitType(commit_type_str)
+                        except ValueError:
+                            logger.warning(f"Invalid commit type, using {group.commit_type.value}")
+                            
+                        description = input("Description (optional): ")
+                        if description:
+                            group.description = description
+                            
+                        issues = input("Issue numbers (comma-separated, optional): ")
+                        if issues:
+                            group.issues = set(issues.split(","))
+                            
+                # Stage the files
+                staging_success = True
+                for change in group.changes:
+                    _, code = self._run_git_command(["add", change.filename])
+                    if code != 0:
+                        logger.error(f"Failed to stage {change.filename}")
+                        staging_success = False
+                        if interactive:
+                            if input("Continue anyway? [y/N]: ").lower() != "y":
+                                return
+                        
+                if not staging_success:
+                    logger.warning("Staging failed for one or more files. Skipping this commit.")
+                    continue
+                    
+                # Verify what's staged
+                logger.info("Staged changes:")
+                staged_changes, _ = self._run_git_command(["status", "--short"])
+                if not any(line.startswith(("A ", "M ")) for line in staged_changes.splitlines()):
+                    logger.warning("No changes staged for commit. Skipping this commit.")
+                    continue
+                
+                # Generate or refine commit message with AI if available
+                if self.use_ai:
+                    try:
+                        # Generate an AI-improved commit message
+                        ai_message = self._generate_ai_commit_message(group)
+                        if ai_message:
+                            group.description = ai_message
+                    except Exception as e:
+                        logger.warning(f"Failed to generate AI commit message: {str(e)}")
+                
+                # Generate final commit message
+                commit_message = group.generate_commit_message()
+                
+                # Allow final review of commit message
+                if interactive:
+                    print("\nCommit message:")
+                    print(commit_message)
+                    if input("\nProceed with commit? [Y/n]: ").lower() == "n":
+                        # Unstage everything
+                        self._run_git_command(["reset"])
+                        logger.info("Changes unstaged, commit canceled")
                         return
-            else:
-                logger.info("Committed successfully")
-                
-                # Show commit summary
-                self._run_git_command(["show", "--name-status", "HEAD"])
-                
-        # Final status check
-        logger.info("All commits completed. Current status:")
-        self._run_git_command(["status", "--short"])
+                        
+                # Execute the commit
+                # Write commit message with UTF-8 encoding explicitly
+                try:
+                    # First make sure .git directory exists
+                    git_dir = os.path.join(self.repo_path, ".git")
+                    if not os.path.isdir(git_dir):
+                        # Try to find the git directory
+                        stdout, _ = self._run_git_command(["rev-parse", "--git-dir"])
+                        git_dir = stdout.strip()
+                        if not os.path.isdir(git_dir):
+                            git_dir = os.path.join(self.repo_path, git_dir)
+
+                    # Now create the commit message file
+                    commit_msg_path = os.path.join(git_dir, "COMMIT_EDITMSG")
+                    
+                    with open(commit_msg_path, "w", encoding='utf-8') as f:
+                        f.write(commit_message)
+                    
+                    # Prepare commit command with hook-skipping if needed
+                    commit_cmd = ["commit", "-F", commit_msg_path]
+                    if self.skip_hooks:
+                        commit_cmd = ["-c", "core.hooksPath=/dev/null"] + commit_cmd
+                        
+                    stdout, code = self._run_git_command(commit_cmd)
+                except Exception as e:
+                    logger.error(f"Failed to create or use commit message file: {str(e)}")
+                    # Try direct commit as fallback
+                    commit_cmd = ["commit", "-m", commit_message]
+                    if self.skip_hooks:
+                        commit_cmd = ["-c", "core.hooksPath=/dev/null"] + commit_cmd
+                    stdout, code = self._run_git_command(commit_cmd)
+                finally:
+                    # Clean up the temporary commit message file
+                    if 'commit_msg_path' in locals() and os.path.exists(commit_msg_path):
+                        try:
+                            os.remove(commit_msg_path)
+                        except OSError as e:
+                            logger.warning(f"Could not remove temporary commit message file: {e}")
+
+                if code != 0:
+                    if "pre-commit" in stdout or "precommit" in stdout:
+                        logger.error("Pre-commit hook failed. Run with --skip-hooks to bypass, or install pre-commit module.")
+                        if not self.skip_hooks and interactive:
+                            skip_hooks = input("Skip git hooks for remaining commits? [Y/n]: ").lower() != "n"
+                            if skip_hooks:
+                                self.skip_hooks = True
+                                # Retry the commit with hooks disabled
+                                commit_cmd = ["-c", "core.hooksPath=/dev/null", "commit", "-F", commit_msg_path]
+                                stdout, code = self._run_git_command(commit_cmd)
+                                if code == 0:
+                                    logger.info("Committed successfully (hooks skipped)")
+                                    continue
+                    
+                    logger.error("Failed to commit changes")
+                    if interactive:
+                        if input("Continue with next commit? [y/N]: ").lower() != "y":
+                            return
+                else:
+                    logger.info("Committed successfully")
+                    
+                    # Show commit summary
+                    self._run_git_command(["show", "--name-status", "HEAD"])
+                    
+            # Final status check
+            logger.info("All commits completed. Current status:")
+            self._run_git_command(["status", "--short"])
+        except Exception as e:
+            logger.error(f"Error during commit execution: {str(e)}")
+            raise RuntimeError(f"Failed to execute commits: {str(e)}")
     
     def _generate_ai_commit_message(self, group: CommitGroup) -> str:
         """Use AI to generate an improved commit message description."""
@@ -1047,29 +1189,73 @@ def main() -> int:
     parser.add_argument("--ollama-model", help="Model to use for Ollama (will prompt if not specified)")
     parser.add_argument("--no-ai", action="store_true", help="Disable AI-powered analysis")
     parser.add_argument("--timeout", type=int, help="Timeout in seconds for HTTP requests", default=10)
+    parser.add_argument("--verbose", action="store_true", help="Show verbose debug output")
+    parser.add_argument("--skip-hooks", action="store_true", help="Skip Git hooks when committing (useful if pre-commit is not installed)")
     args = parser.parse_args()
     
+    # Configure logging level
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+    
     try:
-        workflow = SmartGitCommitWorkflow(
-            repo_path=args.repo_path,
-            ollama_host=args.ollama_host,
-            ollama_model=args.ollama_model,
-            use_ai=not args.no_ai,
-            timeout=args.timeout
-        )
+        # Verify the repository path exists
+        if not os.path.exists(args.repo_path):
+            logger.error(f"Repository path '{args.repo_path}' does not exist")
+            print(f"\n❌ ERROR: Repository path '{args.repo_path}' does not exist\n")
+            return 1
         
-        workflow.load_changes()
+        # Create the workflow
+        try:
+            workflow = SmartGitCommitWorkflow(
+                repo_path=args.repo_path,
+                ollama_host=args.ollama_host,
+                ollama_model=args.ollama_model,
+                use_ai=not args.no_ai,
+                timeout=args.timeout,
+                skip_hooks=args.skip_hooks
+            )
+        except RuntimeError as e:
+            # Handle git repository errors with a clear message
+            logger.error(str(e))
+            print(f"\n❌ ERROR: {str(e)}")
+            print("\nPlease make sure you're running this command from within a git repository.")
+            print("You can initialize a git repository with: git init\n")
+            return 1
         
+        # Load changes
+        try:
+            workflow.load_changes()
+        except RuntimeError as e:
+            logger.error(f"Failed to load changes: {str(e)}")
+            print(f"\n❌ ERROR: {str(e)}\n")
+            return 1
+        
+        # Check if there are changes to commit
         if not workflow.changes:
             logger.info("No changes to commit")
+            print("\n✓ No changes to commit. Working directory is clean.")
             return 0
             
+        # Analyze and group changes
         workflow.analyze_and_group_changes()
-        workflow.execute_commits(interactive=not args.non_interactive)
         
-        return 0
+        # Execute commits
+        try:
+            workflow.execute_commits(interactive=not args.non_interactive)
+            print("\n✓ Commit operation completed successfully.")
+            return 0
+        except RuntimeError as e:
+            logger.error(f"Failed to execute commits: {str(e)}")
+            print(f"\n❌ ERROR during commit execution: {str(e)}\n")
+            return 1
+            
+    except KeyboardInterrupt:
+        print("\n\nOperation cancelled by user.")
+        return 130  # Standard exit code for SIGINT
     except Exception as e:
-        logger.error(f"Error during git commit workflow: {str(e)}", exc_info=True)
+        logger.error(f"Unexpected error during git commit workflow: {str(e)}", exc_info=True)
+        print(f"\n❌ UNEXPECTED ERROR: {str(e)}")
+        print("\nPlease report this issue with the error details from the log.")
         return 1
 
 
