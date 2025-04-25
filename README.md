@@ -94,6 +94,7 @@ usage: smart-git-commit [-h] [--repo-path REPO_PATH] [--non-interactive]
                         [--ollama-host OLLAMA_HOST] 
                         [--ollama-model OLLAMA_MODEL] [--no-ai]
                         [--timeout TIMEOUT] [--verbose] [--skip-hooks]
+                        [--no-revert]
 
 Smart Git Commit Workflow with Ollama Integration
 
@@ -110,6 +111,7 @@ options:
   --timeout TIMEOUT     Timeout in seconds for HTTP requests (default: 10)
   --verbose             Show verbose debug output
   --skip-hooks          Skip Git hooks when committing (useful if pre-commit is not installed)
+  --no-revert           Don't automatically revert staged changes on error
 ```
 
 ## Example Commit
@@ -379,6 +381,7 @@ MIT
 - Added checks to prevent incomplete staging and failed commits
 - Added detection and handling of pre-commit hooks with --skip-hooks option
 - Added automatic fixes for "No module named pre_commit" errors
+- Added automatic revert system to clean up staged changes on error or interruption
 - Expanded troubleshooting documentation with common error solutions
 - Added relative path resolution to prevent path duplication issues
 
