@@ -93,7 +93,7 @@ smart-git-commit --help
 usage: smart-git-commit [-h] [--repo-path REPO_PATH] [--non-interactive]
                         [--ollama-host OLLAMA_HOST] 
                         [--ollama-model OLLAMA_MODEL] [--no-ai]
-                        [--timeout TIMEOUT]
+                        [--timeout TIMEOUT] [--verbose] [--skip-hooks]
 
 Smart Git Commit Workflow with Ollama Integration
 
@@ -108,6 +108,8 @@ options:
                         Model to use for Ollama (will prompt if not specified)
   --no-ai               Disable AI-powered analysis
   --timeout TIMEOUT     Timeout in seconds for HTTP requests (default: 10)
+  --verbose             Show verbose debug output
+  --skip-hooks          Skip Git hooks when committing (useful if pre-commit is not installed)
 ```
 
 ## Example Commit
@@ -223,6 +225,31 @@ smart-git-commit --repo-path /path/to/your/repository
 
 ### Common Issues
 
+#### Error: "Not a git repository"
+- Ensure you're running the command from within a git repository
+- If needed, initialize a new git repository with `git init`
+- Verify that the `.git` directory exists and is accessible
+
+#### Error: "Repository path does not exist"
+- Check that the specified path exists when using `--repo-path`
+- Use absolute paths if relative paths aren't working correctly
+
+#### Error: "Git is not properly configured"
+- Git requires user.name and user.email to be set before committing
+- Configure with:
+  ```bash
+  git config --global user.name "Your Name"
+  git config --global user.email "your.email@example.com"
+  ```
+
+#### Error: "Failed to stage files"
+- When running from a subdirectory, use the `--repo-path` argument to specify the git root directory:
+  ```bash
+  # If you're in a subdirectory like 'backend'
+  smart-git-commit --repo-path ..
+  ```
+- Ensure you have write access to the repository files
+
 #### Error: "No models found in Ollama"
 - Make sure Ollama is running: `ollama serve`
 - Check that you have at least one model installed: `ollama list`
@@ -246,6 +273,23 @@ smart-git-commit --repo-path /path/to/your/repository
   smart-git-commit --timeout 30
   ```
 - For slow networks or large models, a longer timeout may be necessary
+
+#### Error: "No module named pre_commit"
+- This occurs when your repository has pre-commit hooks configured but the pre-commit Python module is not installed
+- Solutions:
+  1. Install pre-commit: `pip install pre-commit`
+  2. Skip the hooks: `smart-git-commit --skip-hooks`
+  3. Remove pre-commit hooks from the repository if not needed
+
+### Command-Line Debugging
+
+For more detailed information when errors occur, use the `--verbose` flag:
+
+```bash
+smart-git-commit --verbose
+```
+
+This will show additional debugging information that can help diagnose issues.
 
 ### Ollama Connection Issues
 
@@ -325,6 +369,18 @@ MIT
 - [Ollama](https://github.com/ollama/ollama) for the local LLM capabilities
 
 # Changelog
+
+## 0.1.6 (2025-04-27)
+- Improved error handling for git repositories and file paths
+- Added detection and proper handling when running from subdirectories
+- Added clear, user-friendly error messages with actionable instructions
+- Added --verbose flag for detailed debugging information
+- Added verification of git configuration before committing
+- Added checks to prevent incomplete staging and failed commits
+- Added detection and handling of pre-commit hooks with --skip-hooks option
+- Added automatic fixes for "No module named pre_commit" errors
+- Expanded troubleshooting documentation with common error solutions
+- Added relative path resolution to prevent path duplication issues
 
 ## 0.1.5 (2025-04-26)
 - Fixed issue with file paths when running from subdirectories
