@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-git-commit"
-version = "0.1.4"
+version = "0.1.5"
 description = "AI-powered Git commit workflow tool"
 readme = "README.md"
 authors = [
@@ -26,6 +26,15 @@ classifiers = [
 ]
 requires-python = ">=3.7"
 dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "coverage>=6.0.0",
+    "black>=22.0.0",
+    "isort>=5.0.0",
+    "ruff>=0.0.85",
+]
 
 [project.urls]
 Homepage = "https://github.com/CripterHack/smart-git-commit"
