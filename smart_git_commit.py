@@ -959,6 +959,25 @@ class SmartGitCommitWorkflow:
                 
         return False
 
+    def _revert_staged_changes(self) -> None:
+        """Revert all staged changes to leave the repository in a clean state."""
+        try:
+            logger.info("Reverting staged changes...")
+            # First try the modern 'git restore' command (Git 2.23+)
+            stdout, code = self._run_git_command(["restore", "--staged", "."])
+            
+            # If that fails, fall back to the older 'git reset' command
+            if code != 0:
+                logger.debug("Modern 'git restore' failed, falling back to 'git reset'")
+                _, reset_code = self._run_git_command(["reset", "HEAD", "."])
+                if reset_code != 0:
+                    logger.warning("Failed to revert staged changes. Repository may be in an inconsistent state.")
+                    return
+            
+            logger.info("Successfully reverted all staged changes.")
+        except Exception as e:
+            logger.warning(f"Error while reverting staged changes: {str(e)}")
+    
     def execute_commits(self, interactive: bool = True) -> None:
         """Execute the commits for each group, with optional interactive mode."""
         if not self.commit_groups:
@@ -1137,6 +1156,8 @@ class SmartGitCommitWorkflow:
             self._run_git_command(["status", "--short"])
         except Exception as e:
             logger.error(f"Error during commit execution: {str(e)}")
+            # Revert any staged changes before exiting
+            self._revert_staged_changes()
             raise RuntimeError(f"Failed to execute commits: {str(e)}")
     
     def _generate_ai_commit_message(self, group: CommitGroup) -> str:
@@ -1191,12 +1212,14 @@ def main() -> int:
     parser.add_argument("--timeout", type=int, help="Timeout in seconds for HTTP requests", default=10)
     parser.add_argument("--verbose", action="store_true", help="Show verbose debug output")
     parser.add_argument("--skip-hooks", action="store_true", help="Skip Git hooks when committing (useful if pre-commit is not installed)")
+    parser.add_argument("--no-revert", action="store_true", help="Don't automatically revert staged changes on error")
     args = parser.parse_args()
     
     # Configure logging level
     if args.verbose:
         logger.setLevel(logging.DEBUG)
     
+    workflow = None
     try:
         # Verify the repository path exists
         if not os.path.exists(args.repo_path):
@@ -1251,11 +1274,20 @@ def main() -> int:
             
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")
+        if workflow and not args.no_revert:
+            workflow._revert_staged_changes()
+            print("Staged changes have been reverted.")
         return 130  # Standard exit code for SIGINT
     except Exception as e:
         logger.error(f"Unexpected error during git commit workflow: {str(e)}", exc_info=True)
         print(f"\n❌ UNEXPECTED ERROR: {str(e)}")
         print("\nPlease report this issue with the error details from the log.")
+        
+        # Revert staged changes if workflow was created
+        if workflow and not args.no_revert:
+            workflow._revert_staged_changes()
+            print("Staged changes have been reverted.")
+        
         return 1
 
 
