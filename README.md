@@ -93,6 +93,7 @@ smart-git-commit --help
 usage: smart-git-commit [-h] [--repo-path REPO_PATH] [--non-interactive]
                         [--ollama-host OLLAMA_HOST] 
                         [--ollama-model OLLAMA_MODEL] [--no-ai]
+                        [--timeout TIMEOUT]
 
 Smart Git Commit Workflow with Ollama Integration
 
@@ -106,6 +107,7 @@ options:
   --ollama-model OLLAMA_MODEL
                         Model to use for Ollama (will prompt if not specified)
   --no-ai               Disable AI-powered analysis
+  --timeout TIMEOUT     Timeout in seconds for HTTP requests (default: 10)
 ```
 
 ## Example Commit
@@ -237,6 +239,14 @@ smart-git-commit --repo-path /path/to/your/repository
 - Try a smaller model like gemma:2b or tinyllama
 - Check Ollama server logs for any errors or memory issues
 
+#### Connection Timeouts
+- If you experience connection timeouts with Ollama, you can adjust the timeout parameter:
+  ```bash
+  # Increase the timeout to 30 seconds
+  smart-git-commit --timeout 30
+  ```
+- For slow networks or large models, a longer timeout may be necessary
+
 ### Ollama Connection Issues
 
 If you encounter issues connecting to Ollama:
@@ -263,6 +273,23 @@ smart-git-commit --no-ai
   - An Ollama-compatible system
   - Internet connection (for initial model download)
 
+## To-Do / Future Features
+
+Here are some planned enhancements and features for future releases:
+
+- **GitHub/GitLab Integration**: Automatic issue linking and PR description generation
+- **Commit Squashing**: Intelligently squash related commits for cleaner history
+- **Multiple AI Backends**: Support for additional AI providers beyond Ollama (like OpenAI, Anthropic, or local models)
+- **Interactive TUI Mode**: Text-based user interface for easier navigation through changes
+- **Custom Commit Templates**: Support for user-defined commit templates and conventions
+- **Config File Support**: Persistent user configurations and project-specific settings
+- **Pre-commit Hook Integration**: Run as a Git hook for seamless workflow integration
+- **Bulk Processing Mode**: Process multiple repositories in batch mode for organization-wide standards
+- **Plugin System**: Allow extensions to add custom functionality
+- **Performance Optimization**: Faster processing of large repositories with many changes
+
+Contributions to any of these features are welcome! See the Contributing section below.
+
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
@@ -271,7 +298,22 @@ To set up your development environment:
 
 1. Clone the repository
 2. Install development dependencies: `pip install -e ".[dev]"`
-3. Run tests: `pytest tests/`
+3. Run tests: `pytest tests/` or use the included test runner: `python run_tests.py`
+
+### Running Tests
+
+The project includes a test runner script with coverage reporting:
+
+```bash
+# Run tests with verbose output
+python run_tests.py -v
+
+# Run tests with coverage reporting (requires the coverage package)
+python run_tests.py -c
+
+# Run tests with both verbose output and coverage reporting
+python run_tests.py -v -c
+```
 
 ## License
 
@@ -283,6 +325,13 @@ MIT
 - [Ollama](https://github.com/ollama/ollama) for the local LLM capabilities
 
 # Changelog
+
+## 0.1.5 (2025-04-26)
+- Fixed issue with file paths when running from subdirectories
+- Fixed commit message file path handling in git repositories
+- Added timeout parameter for better control of network operations
+- Improved error handling for network and connection issues
+- Enhanced Test Coverage with clear instructions of usage
 
 ## 0.1.4 (2025-04-25)
 - UnicodeDecodeError fixed
