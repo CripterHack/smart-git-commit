@@ -381,7 +381,9 @@ class SmartGitCommitWorkflow:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=self.repo_path,
-            text=True
+            text=True,
+            encoding='utf-8',  # Specify UTF-8 encoding
+            errors='ignore'    # Ignore decoding errors
         )
         stdout, stderr = process.communicate()
         if process.returncode != 0 and stderr:
@@ -518,7 +520,7 @@ class SmartGitCommitWorkflow:
         else:
             # For untracked files, read a sample of the content
             try:
-                with open(os.path.join(self.repo_path, change.filename), 'r') as f:
+                with open(os.path.join(self.repo_path, change.filename), 'r', encoding='utf-8', errors='ignore') as f:
                     file_content = "".join(f.readlines()[:50])
             except Exception:
                 pass
@@ -881,10 +883,21 @@ class SmartGitCommitWorkflow:
                     return
                     
             # Execute the commit
-            with open(os.path.join(self.repo_path, ".git", "COMMIT_EDITMSG"), "w") as f:
-                f.write(commit_message)
-                
-            stdout, code = self._run_git_command(["commit", "-F", os.path.join(".git", "COMMIT_EDITMSG")])
+            # Write commit message with UTF-8 encoding explicitly
+            commit_msg_path = os.path.join(self.repo_path, ".git", "COMMIT_EDITMSG")
+            try:
+                with open(commit_msg_path, "w", encoding='utf-8') as f:
+                    f.write(commit_message)
+                    
+                stdout, code = self._run_git_command(["commit", "-F", os.path.join(".git", "COMMIT_EDITMSG")])
+            finally:
+                # Clean up the temporary commit message file
+                if os.path.exists(commit_msg_path):
+                    try:
+                        os.remove(commit_msg_path)
+                    except OSError as e:
+                        logger.warning(f"Could not remove temporary commit message file: {e}")
+
             if code != 0:
                 logger.error("Failed to commit changes")
                 if interactive:
