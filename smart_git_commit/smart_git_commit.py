@@ -68,15 +68,140 @@ SPINNER_CHARS = [
 
 # ANSI color codes for terminal output
 class Colors:
+    # Basic ANSI colors
     RESET = "\033[0m"
     BOLD = "\033[1m"
+    ITALIC = "\033[3m"
+    UNDERLINE = "\033[4m"
+    BLINK = "\033[5m"
+    REVERSE = "\033[7m"
+    
+    # Standard colors
+    BLACK = "\033[30m"
     RED = "\033[31m"
     GREEN = "\033[32m"
     YELLOW = "\033[33m"
     BLUE = "\033[34m"
     MAGENTA = "\033[35m"
     CYAN = "\033[36m"
+    WHITE = "\033[37m"
     GRAY = "\033[90m"
+    
+    # Bright colors
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+    
+    # Background colors
+    BG_BLACK = "\033[40m"
+    BG_RED = "\033[41m"
+    BG_GREEN = "\033[42m"
+    BG_YELLOW = "\033[43m"
+    BG_BLUE = "\033[44m"
+    BG_MAGENTA = "\033[45m"
+    BG_CYAN = "\033[46m"
+    BG_WHITE = "\033[47m"
+    
+    # Cyberpunk theme colors
+    CYBER_PINK = "\033[38;5;198m"
+    CYBER_BLUE = "\033[38;5;39m"
+    CYBER_PURPLE = "\033[38;5;141m"
+    CYBER_YELLOW = "\033[38;5;220m"
+    CYBER_GREEN = "\033[38;5;119m"
+    CYBER_ORANGE = "\033[38;5;208m"
+    CYBER_TEAL = "\033[38;5;51m"
+    
+    # Theme configuration
+    THEME = "cyberpunk"  # Options: "standard", "cyberpunk"
+    
+    @classmethod
+    def set_theme(cls, theme_name):
+        """Set the color theme."""
+        cls.THEME = theme_name.lower()
+    
+    @classmethod
+    def get_primary(cls):
+        """Get primary theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_BLUE
+            return cls.BLUE
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_secondary(cls):
+        """Get secondary theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_PINK
+            return cls.GREEN
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_success(cls):
+        """Get success theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_GREEN
+            return cls.GREEN
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_warning(cls):
+        """Get warning theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_YELLOW
+            return cls.YELLOW
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_error(cls):
+        """Get error theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.BRIGHT_RED
+            return cls.RED
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_info(cls):
+        """Get info theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_TEAL
+            return cls.CYAN
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_highlight(cls):
+        """Get highlight theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_PURPLE
+            return cls.MAGENTA
+        except (AttributeError, TypeError):
+            return ""
+    
+    @classmethod
+    def get_accent(cls):
+        """Get accent theme color."""
+        try:
+            if cls.THEME == "cyberpunk":
+                return cls.CYBER_ORANGE
+            return cls.YELLOW
+        except (AttributeError, TypeError):
+            return ""
 
 # Check if terminal supports colors
 def supports_color():
@@ -93,7 +218,7 @@ def supports_color():
 if not supports_color():
     # Disable colors if not supported
     for attr in dir(Colors):
-        if not attr.startswith('__'):
+        if not attr.startswith('__') and not attr.startswith('get_') and not attr == 'set_theme':
             setattr(Colors, attr, '')
 
 
@@ -2450,7 +2575,7 @@ def get_version():
             pass
         
         # Default version if all else fails
-        return "0.2.1"  # Fallback version
+        return "0.2.2"  # Fallback version
 
 
 def display_version():
@@ -2471,8 +2596,8 @@ def display_version():
     sys.exit(0)
 
 
-def main() -> int:
-    """Main function to run the smart git commit workflow."""
+def parse_args():
+    """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Smart Git Commit Workflow with Ollama Integration")
     parser.add_argument("--repo-path", help="Path to the git repository", default=".")
     parser.add_argument("--non-interactive", action="store_true", help="Run without interactive prompts")
@@ -2485,31 +2610,107 @@ def main() -> int:
     parser.add_argument("--no-revert", action="store_true", help="Don't automatically revert staged changes on error")
     parser.add_argument("--no-parallel", action="store_true", help="Disable parallel processing for slower but more stable operation")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
+    parser.add_argument("--theme", choices=["standard", "cyberpunk"], default="cyberpunk", help="Color theme to use (default: cyberpunk)")
     parser.add_argument("--version", action="store_true", help="Show version information and support links")
-    args = parser.parse_args()
+    return parser.parse_args()
+
+
+def display_banner(use_color=True):
+    """Display a cool banner for the tool."""
+    if use_color:
+        primary = Colors.get_primary()
+        secondary = Colors.get_secondary()
+        accent = Colors.get_accent()
+        reset = Colors.RESET
+    else:
+        primary = secondary = accent = reset = ""
     
-    # Disable colors if requested
-    if args.no_color:
-        for attr in dir(Colors):
-            if not attr.startswith('__'):
-                setattr(Colors, attr, '')
+    version = get_version()
     
-    # Show version info and exit if requested
+    if Colors.THEME == "cyberpunk":
+        # Cyberpunk-themed ASCII art banner
+        banner = f"""
+{primary}  _______{secondary}  __  __{primary}        __{secondary}  __{primary}  ______{reset}     {accent} _________{reset}  {primary} ____{reset}  {secondary}  _______{reset}
+{primary} /       {secondary}|/  |/  |{primary}      /  |{secondary}/  |{primary}/      \\{reset}   {accent}/        {reset} {primary}/    \\{reset} {secondary}/       \\{reset}
+{primary}/$$$$$$$/{secondary} $$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$$$$${reset}  {primary}|{reset}  {accent}$$$$$$$/${reset}  {primary}/$$$$  |{reset}{secondary}$$$$$$$  |{reset}
+{primary}$$ |{reset}  {primary}___{reset}  {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ | {reset} {primary}$$ |{reset} {accent}$$ |{reset}      {primary}$$ | {reset} {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
+{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ |{reset}  {primary}$$ |{reset} {accent}$$ |____{reset}  {primary}$$ |{reset}  {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
+{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ \\{reset}  {primary}$$ |{reset} {accent}$$      \\{reset} {primary}$$ \\{reset}  {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
+{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}_____ $$ |{secondary}$$ |{primary}$${reset}  {primary}$${reset}  {primary}$$/|{reset} {accent}$$$$$$$/${reset} {primary}$${reset}  {primary}$${reset}  {primary}$$/|{reset}{secondary}$$ |  $$ |{reset}
+{primary}$$/|{reset}      {secondary}$$/|$$/|{primary}_____|$$/|{secondary}$$/|{primary}$${reset}    {primary}$${reset}  {primary}$${reset} {accent}$_{reset}        {primary}$${reset}    {primary}$${reset}  {primary}$${reset} {secondary}$$/|  $$/|{reset}
+                                    {primary}$$$${reset}    {primary}$${reset}  {primary}$${reset}            {primary}$$$${reset}    {primary}$${reset}  {primary}$${reset}            
+        {primary}Smart Git Commit v{version}{reset}
+"""
+    else:
+        # Standard banner for non-cyberpunk theme
+        banner = f"""
+{primary}  _____                      _     _____ _ _      _____ ____  __  __ __  __ _____ _{reset}
+{primary} / ____|                    | |   / ____(_) |    / ____|___ \\|  \\/  |  \\/  |_   _| |{reset}
+{secondary}| (___  _ __ ___   __ _ _ __| |_ | |  __ _| |_  | |      __) | \\  / | \\  / | | | | |{reset}
+{secondary} \\___ \\| '_ ` _ \\ / _` | '__| __|| | |_ | | __| | |     |__ <| |\\/| | |\\/| | | | | |{reset}
+{primary} ____) | | | | | | (_| | |  | |_ | |__| | | |_  | |____ ___) | |  | | |  | |_| |_|_|{reset}
+{primary}|_____/|_| |_| |_|\\__,_|_|   \\__| \\_____|_|\\__|  \\_____|____/|_|  |_|_|  |_|_____|_){reset}
+                                                                           
+        {primary}Smart Git Commit v{version}{reset}
+"""
+    
+    print(banner)
+    print(f"{accent}╔══════════════════════════════════════════════════════════════════╗{reset}")
+    print(f"{accent}║ {primary}AI-powered Git workflow{reset} for {secondary}intelligent{reset} commit messages {accent}║{reset}")
+    print(f"{accent}╚══════════════════════════════════════════════════════════════════╝{reset}")
+    print()
+
+
+def print_section_header(title, use_color=True):
+    """Display a styled section header."""
+    if use_color:
+        primary = Colors.get_primary()
+        secondary = Colors.get_secondary()
+        accent = Colors.get_accent()
+        reset = Colors.RESET
+    else:
+        primary = secondary = accent = reset = ""
+    
+    width = 60
+    if Colors.THEME == "cyberpunk":
+        print(f"\n{accent}┌{'─' * (width - 2)}┐{reset}")
+        print(f"{accent}│{reset} {primary}{title}{reset}{' ' * (width - len(title) - 4)}{accent}│{reset}")
+        print(f"{accent}└{'─' * (width - 2)}┘{reset}")
+    else:
+        print(f"\n{primary}===== {title} ====={reset}")
+
+
+def main():
+    """Run the Smart Git Commit workflow."""
+    args = parse_args()
+    
+    # Show version and exit if requested
     if args.version:
-        display_version()
+        version = get_version()
+        print(f"Smart Git Commit v{version}")
+        print("\nThis tool is maintained by community contributions.")
+        print("If you find it useful, please consider supporting:")
+        print("- GitHub Sponsors: https://github.com/sponsors/CripterHack")
+        print("- PayPal: http://paypal.com/paypalme/cripterhack")
         return 0
     
-    # Configure logging level
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
+    # Set up colored output
+    use_color = supports_color() and not args.no_color
     
-    # Early git status check to avoid unnecessary Ollama loading
+    # Set color theme
+    if use_color:
+        Colors.set_theme(args.theme)
+    
+    # Display banner
+    display_banner(use_color)
+    
+    # Early git status check to avoid unnecessary processing
     try:
-        print(f"\n{Colors.BLUE}🔍 Checking for changes in repository...{Colors.RESET}")
+        print_section_header("Checking Repository Status", use_color)
         # Simple check if git is installed and repository exists
         result = subprocess.run(
             ["git", "status", "--porcelain"],
-            cwd=args.repo_path,
+            cwd=args.repo_path or ".",
             capture_output=True,
             text=True,
             encoding='utf-8',
@@ -2517,22 +2718,22 @@ def main() -> int:
         )
         
         if result.returncode != 0:
-            print(f"\n{Colors.RED}❌ Error: Not a git repository or git command failed.{Colors.RESET}")
+            print(f"\n{Colors.get_error()}❌ Error: Not a git repository or git command failed.{Colors.RESET}")
             print(f"Please ensure you're in a git repository and git is installed.")
             return 1
             
         # Check if there are any changes to commit
         if not result.stdout.strip():
-            print(f"\n{Colors.GREEN}✅ No changes to commit. Working directory is clean.{Colors.RESET}")
+            print(f"\n{Colors.get_success()}✅ No changes to commit. Working directory is clean.{Colors.RESET}")
             return 0
             
         # Proceed only if there are changes
         change_count = len([line for line in result.stdout.splitlines() if line.strip()])
-        print(f"{Colors.GREEN}✅ Found {change_count} changed files in repository.{Colors.RESET}")
+        print(f"{Colors.get_success()}✅ Found {change_count} changed files in repository.{Colors.RESET}")
         logger.debug(f"Changes detected in repository ({change_count} files). Proceeding with analysis.")
         
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Error checking git status: {str(e)}{Colors.RESET}")
+        print(f"\n{Colors.get_error()}❌ Error checking git status: {str(e)}{Colors.RESET}")
         return 1
     
     # Print welcome message
@@ -2546,70 +2747,27 @@ def main() -> int:
     
     workflow = None
     try:
-        # Verify the repository path exists
-        if not os.path.exists(args.repo_path):
-            logger.error(f"Repository path '{args.repo_path}' does not exist")
-            print(f"\n{Colors.RED}❌ ERROR: Repository path '{args.repo_path}' does not exist{Colors.RESET}\n")
-            return 1
+        # Create the workflow
+        print_section_header("Initializing Smart Git Commit", use_color)
         
-        # Show repository info
-        repo_path = os.path.abspath(args.repo_path)
-        print(f"{Colors.CYAN}📂 Repository: {repo_path}{Colors.RESET}")
-        
-        # Check system resources
-        resources = get_system_resources()
-        print(f"{Colors.CYAN}🖥️  System resources: {resources['cpu_count']} CPUs, {resources['memory_gb']:.1f}GB RAM{Colors.RESET}")
-        print(f"{Colors.CYAN}⚙️  Using {'parallel' if not args.no_parallel else 'sequential'} processing with batch size {resources['batch_size']}{Colors.RESET}")
-        
-        # Create the workflow without a spinner
-        # The OllamaClient has its own progress indicators and handles user interaction
-        try:
-            print(f"\n{Colors.BLUE}🚀 Initializing Smart Git Commit workflow...{Colors.RESET}")
-            
-            # Only show spinner for non-AI mode to avoid conflict with model selection UI
-            if args.no_ai:
-                with Spinner(message="Setting up rule-based analysis...", spinner_type=0):
-                    workflow = SmartGitCommitWorkflow(
-                        repo_path=args.repo_path,
-                        ollama_host=args.ollama_host,
-                        ollama_model=args.ollama_model,
-                        use_ai=False,
-                        timeout=args.timeout,
-                        skip_hooks=args.skip_hooks,
-                        parallel=not args.no_parallel
-                    )
-            else:
-                # Initialize without spinner to allow proper UI for model selection
-                workflow = SmartGitCommitWorkflow(
-                    repo_path=args.repo_path,
-                    ollama_host=args.ollama_host,
-                    ollama_model=args.ollama_model,
-                    use_ai=True,
-                    timeout=args.timeout,
-                    skip_hooks=args.skip_hooks,
-                    parallel=not args.no_parallel
-                )
-        except RuntimeError as e:
-            # Handle git repository errors with a clear message
-            logger.error(str(e))
-            print(f"\n{Colors.RED}❌ ERROR: {str(e)}{Colors.RESET}")
-            print(f"\nPlease make sure you're running this command from within a git repository.")
-            print(f"You can initialize a git repository with: {Colors.CYAN}git init{Colors.RESET}\n")
-            return 1
+        workflow = SmartGitCommitWorkflow(
+            repo_path=args.repo_path or ".",
+            ollama_host=args.ollama_host,
+            ollama_model=args.ollama_model,
+            use_ai=not args.no_ai,
+            timeout=args.timeout,
+            skip_hooks=args.skip_hooks,
+            parallel=not args.no_parallel
+        )
         
         # Load changes
-        try:
-            print(f"\n{Colors.BLUE}🔍 Detecting changes...{Colors.RESET}")
-            workflow.load_changes()
-        except RuntimeError as e:
-            logger.error(f"Failed to load changes: {str(e)}")
-            print(f"\n{Colors.RED}❌ ERROR: {str(e)}{Colors.RESET}\n")
-            return 1
+        print_section_header("Analyzing Changes", use_color)
+        workflow.load_changes()
         
         # Check if there are changes to commit
         if not workflow.changes:
             logger.info("No changes to commit")
-            print(f"\n{Colors.GREEN}✅ No changes to commit. Working directory is clean.{Colors.RESET}")
+            print(f"\n{Colors.get_success()}✅ No changes to commit. Working directory is clean.{Colors.RESET}")
             
             # Thank you message with donation links even when there are no changes
             print("\n" + "-" * 60)
@@ -2622,46 +2780,34 @@ def main() -> int:
             return 0
         
         # Analyze and group changes
-        print(f"\n{Colors.BLUE}🧩 Found {len(workflow.changes)} changed files. Analyzing and grouping...{Colors.RESET}")
+        print(f"{Colors.get_accent()}🧩 Found {len(workflow.changes)} changed files. Analyzing and grouping...{Colors.RESET}")
+        
         with Spinner(message="Organizing changes into logical commits...", spinner_type=2):
             workflow.analyze_and_group_changes()
         
-        print(f"\n{Colors.BOLD}📋 Created {len(workflow.commit_groups)} commit groups:{Colors.RESET}")
+        print_section_header("Commit Groups", use_color)
         for i, group in enumerate(workflow.commit_groups):
-            print(f"  {i+1}. {Colors.GREEN}{group.name}{Colors.RESET} ({group.file_count} files)")
+            print(f"  {i+1}. {Colors.get_success()}{group.name}{Colors.RESET} ({group.file_count} files)")
         
         # Execute commits
-        try:
-            workflow.execute_commits(interactive=not args.non_interactive)
-            print(f"\n{Colors.GREEN}✅ Commit operation completed successfully.{Colors.RESET}")
-            
-            # Thank you message with donation links
-            print("\n" + "-" * 60)
-            print(f"{Colors.BOLD}Thank you for using Smart Git Commit! If this tool saved you time,{Colors.RESET}")
-            print("please consider supporting development:")
-            print(f"{Colors.RED}❤️  https://github.com/sponsors/CripterHack{Colors.RESET}")
-            print(f"{Colors.BLUE}💰 http://paypal.com/paypalme/cripterhack{Colors.RESET}")
-            print("-" * 60 + "\n")
-            
-            return 0
-        except RuntimeError as e:
-            # Special case for pre-commit module issues
-            if "pre_commit module is not available" in str(e):
-                logger.error(f"Pre-commit module error: {str(e)}")
-                print(f"\n{Colors.RED}❌ ERROR: {str(e)}{Colors.RESET}")
-                print("\nSolutions:")
-                print(f"  1. {Colors.CYAN}Install pre-commit: pip install pre-commit{Colors.RESET}")
-                print(f"  2. {Colors.CYAN}Run with hooks skipped: smart-git-commit --skip-hooks{Colors.RESET}")
-            else:
-                logger.error(f"Failed to execute commits: {str(e)}")
-                print(f"\n{Colors.RED}❌ ERROR during commit execution: {str(e)}{Colors.RESET}\n")
-            return 1
+        print_section_header("Executing Commits", use_color)
+        workflow.execute_commits(interactive=not args.non_interactive)
+        
+        print(f"\n{Colors.get_success()}✅ Commit operation completed successfully.{Colors.RESET}")
+        
+        # Thank you message with donation links
+        print_section_header("Thank You", use_color)
+        print(f"If Smart Git Commit saved you time, please consider supporting development:")
+        print(f"{Colors.get_secondary()}❤️  https://github.com/sponsors/CripterHack{Colors.RESET}")
+        print(f"{Colors.get_primary()}💰 http://paypal.com/paypalme/cripterhack{Colors.RESET}")
+        
+        return 0
         
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.YELLOW}🛑 Operation cancelled by user.{Colors.RESET}")
+        print(f"\n\n{Colors.get_warning()}🛑 Operation cancelled by user.{Colors.RESET}")
         if workflow and not args.no_revert:
             workflow._revert_staged_changes()
-            print(f"{Colors.BLUE}🔄 Staged changes have been reverted.{Colors.RESET}")
+            print(f"{Colors.get_primary()}🔄 Staged changes have been reverted.{Colors.RESET}")
             
         # Still show donation links on keyboard interrupt
         print("\n" + "-" * 60)
@@ -2672,15 +2818,16 @@ def main() -> int:
         print("-" * 60 + "\n")
         
         return 130  # Standard exit code for SIGINT
+        
     except Exception as e:
         logger.error(f"Unexpected error during git commit workflow: {str(e)}", exc_info=True)
-        print(f"\n{Colors.RED}❌ UNEXPECTED ERROR: {str(e)}{Colors.RESET}")
+        print(f"\n{Colors.get_error()}❌ UNEXPECTED ERROR: {str(e)}{Colors.RESET}")
         print("\nPlease report this issue with the error details from the log.")
         
         # Revert staged changes if workflow was created
         if workflow and not args.no_revert:
             workflow._revert_staged_changes()
-            print(f"{Colors.BLUE}🔄 Staged changes have been reverted.{Colors.RESET}")
+            print(f"{Colors.get_primary()}🔄 Staged changes have been reverted.{Colors.RESET}")
         
         return 1
 
