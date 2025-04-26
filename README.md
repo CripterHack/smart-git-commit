@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="smart-commit.png" alt="Smart Git Commit" width="256" height="256"/>
+  <img src="https://raw.githubusercontent.com/CripterHack/smart-git-commit/main/smart-commit.png" alt="Smart Git Commit" width="256" height="256"/>
 </p>
 
 # Smart Git Commit 🚀
