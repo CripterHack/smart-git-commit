@@ -404,6 +404,17 @@ MIT
 
 # Changelog
 
+## 0.2.3 (2025-04-26)
+- Enhanced cyberpunk theme with artistic Celtic knot border design for improved visual aesthetics
+- Implemented wider banner display (130 characters) for better visibility on modern terminals
+- Added support for previously implemented dracula and nord themes in command-line interface
+- Improved theme-specific banner styling with unique layouts for each theme variant
+- Enhanced theme-specific section headers with distinct visual styles for each theme
+- Optimized ASCII art rendering for better compatibility across terminal types
+- Fixed theme formatting inconsistencies between different UI components
+- Improved color contrast in cyberpunk theme for better readability in various terminal backgrounds
+- Added highlight color usage in banner display for better visual hierarchy
+
 ## 0.2.2 (2025-04-26)
 - Enhanced cyberpunk theme with vibrant colors for improved terminal visibility
 - Added theme switching via command-line parameter with --theme option
