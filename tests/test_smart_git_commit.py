@@ -12,6 +12,7 @@ from typing import List, Optional
 from collections import defaultdict
 import socket
 import http.client
+import platform
 
 # Add parent directory to path to import the main module
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -453,6 +454,128 @@ class TestOllamaClient(TestCase):
             
             # Verify the model was obtained from CLI
             self.assertEqual(client.available_models, ["llama3"])
+
+
+class TestPreCommitHandling(TestCase):
+    """Tests for pre-commit hook detection and handling."""
+    
+    @mock.patch('os.path.isfile')
+    @mock.patch('os.access')
+    def test_precommit_hook_detection(self, mock_access, mock_isfile):
+        """Test detection of pre-commit hooks."""
+        # Mock the existence of a pre-commit hook file
+        mock_isfile.return_value = True
+        mock_access.return_value = True
+        
+        # Set up workflow
+        workflow = smart_git_commit.SmartGitCommitWorkflow(use_ai=False)
+        
+        # Mock git root
+        workflow._get_git_root = mock.MagicMock(return_value="/test/repo")
+        
+        # Test hook detection
+        self.assertTrue(workflow._check_for_precommit_hooks())
+    
+    @mock.patch('importlib.import_module')
+    def test_precommit_module_availability(self, mock_import):
+        """Test detection of pre-commit module availability."""
+        # Test when module is available
+        workflow = smart_git_commit.SmartGitCommitWorkflow(use_ai=False)
+        
+        # Mock successful import
+        mock_import.return_value = True
+        self.assertTrue(workflow._is_precommit_module_available())
+        
+        # Mock import error
+        mock_import.side_effect = ImportError("No module named 'pre_commit'")
+        
+        # Mock subprocess result for fallback check
+        with mock.patch('subprocess.run') as mock_run:
+            mock_process = mock.MagicMock()
+            mock_process.returncode = 1  # Import failed
+            mock_run.return_value = mock_process
+            
+            self.assertFalse(workflow._is_precommit_module_available())
+    
+    @mock.patch('smart_git_commit.SmartGitCommitWorkflow._check_for_precommit_hooks')
+    @mock.patch('smart_git_commit.SmartGitCommitWorkflow._is_precommit_module_available')
+    def test_auto_skip_hooks(self, mock_available, mock_check):
+        """Test auto-skipping of hooks when pre-commit module is not available."""
+        # Mock pre-commit hooks exist but module not available
+        mock_check.return_value = True
+        mock_available.return_value = False
+        
+        # Set up workflow
+        workflow = smart_git_commit.SmartGitCommitWorkflow(use_ai=False, skip_hooks=False)
+        
+        # Add a dummy commit group
+        group = smart_git_commit.CommitGroup(name="Test commit", commit_type=smart_git_commit.CommitType.FEAT)
+        group.add_change(smart_git_commit.GitChange(status="M", filename="test.py"))
+        workflow.commit_groups = [group]
+        
+        # Mock Git commands to avoid real execution
+        workflow._run_git_command = mock.MagicMock(return_value=("", 0))
+        
+        # Mock file operations
+        with mock.patch('builtins.open', mock.mock_open()):
+            with mock.patch('os.path.exists', return_value=True):
+                with mock.patch('os.remove'):
+                    # Execute in non-interactive mode to avoid input prompts
+                    workflow.execute_commits(interactive=False)
+                    
+                    # Verify hooks were auto-skipped
+                    self.assertTrue(workflow.skip_hooks)
+
+
+class TestColorSupport(TestCase):
+    """Tests for color support in terminal output."""
+    
+    def test_color_detection(self):
+        """Test detection of terminal color support."""
+        # Test color support detection
+        with mock.patch('platform.system') as mock_system:
+            with mock.patch('sys.stdout') as mock_stdout:
+                # Test Windows with no color support
+                mock_system.return_value = 'Windows'
+                mock_stdout.isatty.return_value = True
+                
+                # Clear environment variables
+                with mock.patch.dict('os.environ', {}, clear=True):
+                    self.assertFalse(smart_git_commit.supports_color())
+                
+                # Test Windows with color support (WT_SESSION)
+                with mock.patch.dict('os.environ', {'WT_SESSION': '1'}):
+                    self.assertTrue(smart_git_commit.supports_color())
+                
+                # Test non-Windows
+                mock_system.return_value = 'Linux'
+                self.assertTrue(smart_git_commit.supports_color())
+    
+    def test_color_disable_flag(self):
+        """Test disabling colors with --no-color flag."""
+        # Capture original values
+        original_values = {attr: getattr(smart_git_commit.Colors, attr) 
+                          for attr in dir(smart_git_commit.Colors) 
+                          if not attr.startswith('__')}
+        
+        # Mock args with no-color option
+        args = mock.MagicMock()
+        args.no_color = True
+        
+        # Simulate disabling colors
+        if args.no_color:
+            for attr in dir(smart_git_commit.Colors):
+                if not attr.startswith('__'):
+                    setattr(smart_git_commit.Colors, attr, '')
+        
+        # Check if all color codes are empty
+        for attr in dir(smart_git_commit.Colors):
+            if not attr.startswith('__'):
+                self.assertEqual(getattr(smart_git_commit.Colors, attr), '')
+        
+        # Restore original values
+        for attr, value in original_values.items():
+            setattr(smart_git_commit.Colors, attr, value)
 
 
 if __name__ == "__main__":

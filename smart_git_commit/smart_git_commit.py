@@ -1079,15 +1079,19 @@ class SmartGitCommitWorkflow:
                         if line.strip():
                             logger.debug(f"Processing status line: {repr(line)}")
                             # The first two characters are the status code
-                            if len(line) >= 2:
+                            if len(line) >= 3:  # Ensure we have at least status and space
                                 status = line[:2]
-                                filename = line[3:].strip()  # Skip the space after status
-                                
-                                # Create a proper entry for processing
-                                entries.append(f"{status} {filename}")
-                                logger.debug(f"Parsed status entry: '{status}' - '{filename}'")
+                                # Everything after position 3 is the filename (skipping the space)
+                                filename = line[3:].strip()
                             else:
-                                logger.warning(f"Invalid status line: '{line}'")
+                                logger.warning(f"Invalid status line (too short): '{line}'")
+                                continue
+                            
+                            # Create a proper entry for processing
+                            entries.append(f"{status} {filename}")
+                            logger.debug(f"Parsed status entry: '{status}' - '{filename}'")
+                        else:
+                            logger.warning(f"Invalid status line: '{line}'")
                 
                 total_files = len(entries)
                 spinner.update(f"Found {total_files} changed files")
@@ -1118,19 +1122,24 @@ class SmartGitCommitWorkflow:
                                 logger.warning(f"Invalid git status entry: '{entry}'")
                                 continue
                             
-                            # Extract status and filename parts
+                            # Extract status and filename parts - handle spaces in status codes
                             parts = entry.split(' ', 1)
                             if len(parts) < 2:
                                 logger.warning(f"Invalid git status format: '{entry}'")
                                 continue
-                                
+                            
                             status = parts[0].strip()
                             filename = parts[1].strip()
+                            
+                            # Handle leading spaces in status (e.g., ' M' vs 'M')
+                            if not status:
+                                status = " " + parts[0]
                             
                             if not filename:
                                 logger.warning(f"Empty filename in git status entry: '{entry}'")
                                 continue
                             
+                            # Create a clean git change object
                             spinner.update(f"Processing file {i+1}/{total_files}: {os.path.basename(filename)}", progress=i)
                             
                             # Handle renamed files (R status with -> in filename)
@@ -1144,9 +1153,21 @@ class SmartGitCommitWorkflow:
                                 continue
                             
                             # Get the proper path relative to git root without extra stripping
-                            # that might remove quotes or other important characters
+                            # or status codes that might have been included
                             clean_filename = self._get_relative_path(filename)
                             logger.debug(f"Processing file: '{clean_filename}' (original: '{filename}')")
+                            
+                            # Verify filename is valid and doesn't include status codes
+                            if not clean_filename or not isinstance(clean_filename, str):
+                                logger.warning(f"Invalid filename: '{clean_filename}'")
+                                continue
+                                
+                            # Make sure the filename doesn't start with status codes
+                            if clean_filename.startswith('M ') or clean_filename.startswith('A ') or clean_filename.startswith('D ') or clean_filename.startswith(' M') or clean_filename.startswith(' D'):
+                                clean_filename = clean_filename[2:].strip()
+                                logger.debug(f"Removing status code from filename: '{filename}' -> '{clean_filename}'")
+                            
+                            spinner.update(f"Processing file {i+1}/{total_files}: {os.path.basename(clean_filename)}", progress=i)
                             
                             # Get diff content for modified files
                             content_diff = None
@@ -1158,7 +1179,7 @@ class SmartGitCommitWorkflow:
                                 else:
                                     logger.warning(f"Failed to get diff for '{clean_filename}': {diff_out}")
                                 
-                            # Create the change object
+                            # Create the change object with clean filename
                             change = GitChange(status=status, filename=clean_filename, content_diff=content_diff)
                             
                             # Detect language
@@ -2192,6 +2213,14 @@ class SmartGitCommitWorkflow:
                     for idx, change in enumerate(group.changes):
                         # Normalize path for cross-platform compatibility
                         norm_path = change.filename.replace('\\', '/')
+                        
+                        # IMPORTANT: Ensure the filename doesn't have status codes prepended
+                        # Sometimes the status code like 'M ' gets included in the filename
+                        if norm_path.startswith('M ') or norm_path.startswith('A ') or norm_path.startswith('D ') or norm_path.startswith(' M') or norm_path.startswith(' D'):
+                            clean_path = norm_path[2:].strip()
+                            logger.debug(f"Removing status code from path: '{norm_path}' -> '{clean_path}'")
+                            norm_path = clean_path
+                        
                         spinner.update(f"Staging file {idx+1}/{total_files}: {os.path.basename(norm_path)}", idx)
                         
                         # Stage each file individually to prevent issues with concatenated paths
