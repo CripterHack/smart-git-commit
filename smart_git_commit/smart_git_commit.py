@@ -2155,8 +2155,12 @@ class SmartGitCommitWorkflow:
                     print(f"  [{Colors.YELLOW}s{Colors.RESET}] Skip this commit group")
                     print(f"  [{Colors.RED}q{Colors.RESET}] Quit without committing")
                     
-                    choice = input(f"\n{Colors.BOLD}Commit these changes? [y/e/s/q]: {Colors.RESET}").lower()
-                    if choice == 'q':
+                    choice = input(f"\n{Colors.BOLD}Commit these changes? [Y/e/s/q]: {Colors.RESET}").lower()
+                    # Empty input (pressing Enter) defaults to "y"
+                    if choice == "" or choice == "y":
+                        # Continue with the commit (default behavior)
+                        pass
+                    elif choice == 'q':
                         print(f"{Colors.YELLOW}Quitting commit operation.{Colors.RESET}")
                         self._revert_staged_changes()
                         return
