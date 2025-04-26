@@ -412,6 +412,13 @@ MIT
 - Improved frontend and backend framework component detection
 - Made default timeout configurable through the codebase with a central constant
 - Better resource utilization with improved CPU and memory detection
+- Fixed cross-platform issues with filenames containing spaces and special characters
+- Enhanced Git status parsing using null-terminated output for better handling of complex filenames
+- Improved path handling with normalized separators for Windows/Unix compatibility
+- Added more robust error handling for Git command failures
+- Enhanced logging with detailed filename debugging information
+- Added failover mechanism for path normalization when staging files fails
+- Implemented strict 50-character limit for commit title lines to comply with GitHub best practices
 
 ## 0.1.9 (2025-04-25)
 - Increased default timeout from 10 to 30 seconds to avoid frequent timeouts with larger models
