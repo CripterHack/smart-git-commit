@@ -404,7 +404,20 @@ MIT
 
 # Changelog
 
+## 0.2.2 (2025-04-26)
+- Enhanced cyberpunk theme with vibrant colors for improved terminal visibility
+- Added theme switching via command-line parameter with --theme option
+- Implemented consistent color theme application across all UI components
+- Added color support detection with graceful fallback for terminals without ANSI support
+- Improved banner display with theme-specific ASCII art
+- Enhanced section headers with themed styling for better readability
+- Added accent colors for highlighting important information
+- Implemented spinner animations with theme-consistent colors
+- Applied theme colors to success, warning, and error messages for intuitive feedback
+
 ## 0.2.1 (2025-04-26)
+- Added early git status check to avoid loading AI model when working directory is clean
+- Fixed default "Yes" option in commit confirmation prompt to properly handle Enter key
 - Fixed critical issue with file staging where git was incorrectly processing filenames with status indicators
 - Improved git staging process with proper handling of files with special characters or dashes
 - Enhanced error handling during file staging operations with better reporting
