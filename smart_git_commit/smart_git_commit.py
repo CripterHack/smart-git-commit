@@ -68,6 +68,22 @@ SPINNER_CHARS = [
 
 # ANSI color codes for terminal output
 class Colors:
+    """
+    ANSI color codes for terminal output with theme support.
+    
+    This class provides both direct color constants and themed color getters.
+    Always prefer the getter methods (get_primary, get_secondary, etc.) over
+    direct color constants to ensure theme consistency and proper fallback
+    behavior when terminal doesn't support colors.
+    
+    Example usage:
+        print(f"{Colors.get_primary()}Themed primary text{Colors.RESET}")
+        print(f"{Colors.get_error()}Error message{Colors.RESET}")
+    
+    Available themes:
+        - "standard" - Basic ANSI colors
+        - "cyberpunk" - Vibrant cyberpunk-inspired color scheme
+    """
     # Basic ANSI colors
     RESET = "\033[0m"
     BOLD = "\033[1m"
