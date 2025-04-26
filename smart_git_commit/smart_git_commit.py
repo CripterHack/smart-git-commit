@@ -2362,14 +2362,6 @@ class SmartGitCommitWorkflow:
             elif successful_commits < total_commits:
                 # Some commits were successful but not all
                 print(f"\n{Colors.YELLOW}⚠️ Warning: Only {successful_commits} out of {total_commits} commits were successful.{Colors.RESET}")
-                
-            # Thank you message with donation links
-            print("\n" + "-" * 60)
-            print(f"{Colors.BOLD}Thank you for using Smart Git Commit! If this tool saved you time,{Colors.RESET}")
-            print("please consider supporting development:")
-            print(f"{Colors.RED}❤️  https://github.com/sponsors/CripterHack{Colors.RESET}")
-            print(f"{Colors.BLUE}💰 http://paypal.com/paypalme/cripterhack{Colors.RESET}")
-            print("-" * 60 + "\n")
             
             if auto_skip_hooks:
                 print(f"{Colors.GREEN}✅ {successful_commits}/{total_commits} commits completed successfully{Colors.RESET}")
