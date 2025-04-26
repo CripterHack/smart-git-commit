@@ -1,6 +1,20 @@
+
+<p align="center">
+  <img src="smart-commit.png" alt="Smart Git Commit" width="256" height="256"/>
+</p>
+
 # Smart Git Commit 🚀
 
 An AI-powered Git workflow tool that intelligently analyzes your changes, groups them into logical commits, and generates detailed conventional commit messages.
+
+## ❤️ Support This Project
+
+If you find Smart Git Commit helpful for your workflow, please consider supporting the development:
+
+- **[GitHub Sponsors](https://github.com/sponsors/CripterHack)**: Become a sponsor through GitHub
+- **[PayPal](http://paypal.com/paypalme/cripterhack)**: Make a one-time donation
+
+Your support helps maintain this project and develop new features!
 
 ## Features
 
@@ -12,6 +26,10 @@ An AI-powered Git workflow tool that intelligently analyzes your changes, groups
 - ⚡ **Fallback Mechanism**: Works even without AI using rule-based analysis
 - 🎯 **Smart Change Importance**: Prioritizes changes based on impact analysis
 - 🧩 **Component Detection**: Identifies file components based on project structure
+
+## Installation from PyPI
+
+The package is available on PyPI and can be installed using pip: https://pypi.org/project/smart-git-commit/
 
 ## Prerequisites
 
@@ -94,7 +112,7 @@ usage: smart-git-commit [-h] [--repo-path REPO_PATH] [--non-interactive]
                         [--ollama-host OLLAMA_HOST] 
                         [--ollama-model OLLAMA_MODEL] [--no-ai]
                         [--timeout TIMEOUT] [--verbose] [--skip-hooks]
-                        [--no-revert]
+                        [--no-revert] [--version]
 
 Smart Git Commit Workflow with Ollama Integration
 
@@ -112,6 +130,7 @@ options:
   --verbose             Show verbose debug output
   --skip-hooks          Skip Git hooks when committing (useful if pre-commit is not installed)
   --no-revert           Don't automatically revert staged changes on error
+  --version             Show version information and support links
 ```
 
 ## Example Commit
@@ -323,16 +342,16 @@ smart-git-commit --no-ai
 
 Here are some planned enhancements and features for future releases:
 
-- **GitHub/GitLab Integration**: Automatic issue linking and PR description generation
-- **Commit Squashing**: Intelligently squash related commits for cleaner history
-- **Multiple AI Backends**: Support for additional AI providers beyond Ollama (like OpenAI, Anthropic, or local models)
-- **Interactive TUI Mode**: Text-based user interface for easier navigation through changes
-- **Custom Commit Templates**: Support for user-defined commit templates and conventions
-- **Config File Support**: Persistent user configurations and project-specific settings
-- **Pre-commit Hook Integration**: Run as a Git hook for seamless workflow integration
-- **Bulk Processing Mode**: Process multiple repositories in batch mode for organization-wide standards
-- **Plugin System**: Allow extensions to add custom functionality
-- **Performance Optimization**: Faster processing of large repositories with many changes
+- [ ] **GitHub/GitLab Integration**: Automatic issue linking and PR description generation
+- [ ] **Commit Squashing**: Intelligently squash related commits for cleaner history
+- [ ] **Multiple AI Backends**: Support for additional AI providers beyond Ollama (like OpenAI, Anthropic, or local models)
+- [ ] **Interactive TUI Mode**: Text-based user interface for easier navigation through changes
+- [ ] **Custom Commit Templates**: Support for user-defined commit templates and conventions
+- [ ] **Config File Support**: Persistent user configurations and project-specific settings
+- [ ] **Pre-commit Hook Integration**: Run as a Git hook for seamless workflow integration
+- [ ] **Bulk Processing Mode**: Process multiple repositories in batch mode for organization-wide standards
+- [ ] **Plugin System**: Allow extensions to add custom functionality
+- [x] **Performance Optimization**: Faster processing of large repositories with many changes
 
 Contributions to any of these features are welcome! See the Contributing section below.
 
@@ -361,6 +380,15 @@ python run_tests.py -c
 python run_tests.py -v -c
 ```
 
+## Sponsorship
+
+If this tool saves you time or helps your workflow, please consider supporting its development:
+
+- **[GitHub Sponsors](https://github.com/sponsors/CripterHack)**: Support ongoing development through GitHub
+- **[PayPal](http://paypal.com/paypalme/cripterhack)**: Make a one-time donation
+
+Every contribution helps maintain this project and add new features. Thank you for your support! ❤️
+
 ## License
 
 MIT
@@ -372,7 +400,46 @@ MIT
 
 # Changelog
 
-## 0.1.6 (2025-04-27)
+## 0.2.0 (2025-04-25)
+- Major enhancement to component detection for modern tech stacks and architectures
+- Added support for monorepo structures with package-specific commit grouping
+- Expanded commit type taxonomy with 8 new conventional commit types
+- Improved commit message formatting to follow GitHub best practices
+- Enhanced non-AI commit generation with more intelligent grouping
+- Added sophisticated tech stack detection for 30+ frameworks and libraries
+- Updated formatter detection to recognize more linting tools
+- Implemented smarter naming for commits with descriptive prefixes
+- Improved frontend and backend framework component detection
+- Made default timeout configurable through the codebase with a central constant
+- Better resource utilization with improved CPU and memory detection
+
+## 0.1.9 (2025-04-25)
+- Increased default timeout from 10 to 30 seconds to avoid frequent timeouts with larger models
+- Fixed issue with truncated filenames when staging files for commit
+- Improved error handling for file staging operations with better error messages
+- Enhanced git configuration validation with user-friendly messaging
+- Added parameter descriptions with defaults in help text
+
+## 0.1.8 (2025-04-25)
+- Improved CLI interface with enhanced progress indicators and loading spinners
+- Added automatic download of recommended model if no models are available
+- Enhanced model selection UI with model size indicators and recommendations
+- Implemented intelligent warm-up for models with realistic prompts
+- Added resource-awareness to adapt batch processing based on system capabilities
+- Improved parallel processing with automatic fallback for low-resource systems
+- Added detailed statistics about system resources during startup
+- Fixed spinner display during user interaction for better UX
+- Added more informative feedback during model initialization and processing
+- Added donation links and sponsor information throughout the application
+- Added --version flag to display version and project information
+- Optimized memory usage for large repositories with change batching
+
+## 0.1.7 (2025-04-25)
+- Enhanced pre-commit hook detection with automatic retry on failure
+- Added automatic hook skipping in non-interactive mode for repositories with pre-commit issues
+- Added proper success/failure tracking across multiple commit attempts
+
+## 0.1.6 (2025-04-25)
 - Improved error handling for git repositories and file paths
 - Added detection and proper handling when running from subdirectories
 - Added clear, user-friendly error messages with actionable instructions
@@ -385,7 +452,7 @@ MIT
 - Expanded troubleshooting documentation with common error solutions
 - Added relative path resolution to prevent path duplication issues
 
-## 0.1.5 (2025-04-26)
+## 0.1.5 (2025-04-25)
 - Fixed issue with file paths when running from subdirectories
 - Fixed commit message file path handling in git repositories
 - Added timeout parameter for better control of network operations
