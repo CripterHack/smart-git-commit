@@ -414,6 +414,9 @@ MIT
 - Added accent colors for highlighting important information
 - Implemented spinner animations with theme-consistent colors
 - Applied theme colors to success, warning, and error messages for intuitive feedback
+- Fixed critical bug with theme color getters causing 'str' object not callable errors
+- Added robust error handling to theme color methods for improved reliability
+- Fixed color support detection to preserve class methods during terminal capability checks
 
 ## 0.2.1 (2025-04-26)
 - Added early git status check to avoid loading AI model when working directory is clean
