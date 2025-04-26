@@ -157,6 +157,27 @@ class TestCommitGroup(TestCase):
         self.assertIn("Affected files:", message)
         self.assertIn("M app/main.py", message)
         self.assertIn("+ app/new_feature.py", message)
+    
+    def test_commit_message_title_truncation(self):
+        """Test that long commit message titles are properly limited to 50 characters."""
+        # Create a commit group with a very long name
+        very_long_name = "This is an extremely long commit title that exceeds the 50 character limit"
+        group = CommitGroup(name=very_long_name, commit_type=CommitType.FEAT)
+        group.add_change(GitChange(status="M", filename="app/main.py"))
+        
+        message = group.generate_commit_message()
+        
+        # Get the first line (subject)
+        subject = message.split('\n')[0]
+        
+        # Check that the subject is within the length limit
+        self.assertLessEqual(len(subject), 50)
+        
+        # The type and scope should be preserved
+        self.assertTrue(subject.startswith('feat(app):'))
+        
+        # No "Full title:" text should appear in the body
+        self.assertNotIn("Full title:", message)
 
 
 class TestMockGitRepository:

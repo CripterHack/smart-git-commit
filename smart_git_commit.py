@@ -421,11 +421,19 @@ class CommitGroup:
         scope = "-".join(sorted(components)[:2]) if components else "general"
         
         # Create the subject line (first line of commit)
-        subject = f"{self.commit_type.value}({scope}): {self.name}"
-        if len(subject) > 50:
-            # Truncate if too long
-            subject = subject[:47] + "..."
-            
+        # Just limit to 50 characters for GitHub compatibility
+        max_subject_length = 50
+        
+        # Start with type and scope
+        prefix = f"{self.commit_type.value}({scope}): "
+        available_chars = max_subject_length - len(prefix)
+        
+        # Ensure the name is no longer than available chars
+        name = self.name if len(self.name) <= available_chars else self.name[:available_chars]
+        
+        # Combine to form subject
+        subject = f"{prefix}{name}"
+        
         # Create the body with file list
         body = self.description if self.description else f"Update {self.file_count} files in {scope}"
         
@@ -2230,6 +2238,7 @@ class SmartGitCommitWorkflow:
         Use present tense (e.g., "Add feature" not "Added feature").
         Focus on technical details rather than trivial changes.
         Do not list the filenames again.
+        Keep the first sentence brief as it will be used in the subject line.
         
         Description:
         """
