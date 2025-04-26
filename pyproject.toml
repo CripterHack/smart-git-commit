@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=42", "wheel"]
+requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "smart-git-commit"
-version = "0.2.0"
+version = "0.2.1"
 description = "AI-powered Git commit workflow tool"
 readme = "README.md"
 authors = [
@@ -41,7 +41,10 @@ Homepage = "https://github.com/CripterHack/smart-git-commit"
 Issues = "https://github.com/CripterHack/smart-git-commit/issues"
 
 [project.scripts]
-smart-git-commit = "smart_git_commit:main"
+smart-git-commit = "smart_git_commit.smart_git_commit:main"
+
+[tool.setuptools]
+packages = ["smart_git_commit"]
 
 [tool.isort]
 profile = "black"
@@ -54,4 +57,4 @@ target-version = ["py37"]
 [tool.ruff]
 line-length = 88
 target-version = "py37"
-select = ["E", "F", "I", "W"]
+select = ["E", "F", "I", "W"] 
