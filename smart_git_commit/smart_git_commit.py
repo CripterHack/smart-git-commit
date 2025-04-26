@@ -36,7 +36,7 @@ import concurrent.futures
 
 # Set up logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Change from INFO to DEBUG
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
         logging.StreamHandler(stream=sys.stdout)
@@ -44,8 +44,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("smart_git_commit")
 
-# Configure logging
-logger.setLevel(logging.DEBUG)
+# Configure logging - default to INFO level
+logger.setLevel(logging.INFO)
 
 # Set default encoding to UTF-8
 if sys.stdout.encoding != 'utf-8':
@@ -83,6 +83,8 @@ class Colors:
     Available themes:
         - "standard" - Basic ANSI colors
         - "cyberpunk" - Vibrant cyberpunk-inspired color scheme
+        - "dracula" - Dark theme inspired by Dracula color palette
+        - "nord" - Cool blue-tinted theme inspired by Nord
     """
     # Basic ANSI colors
     RESET = "\033[0m"
@@ -131,8 +133,26 @@ class Colors:
     CYBER_ORANGE = "\033[38;5;208m"
     CYBER_TEAL = "\033[38;5;51m"
     
+    # Dracula theme colors
+    DRACULA_PURPLE = "\033[38;5;141m"
+    DRACULA_PINK = "\033[38;5;212m"
+    DRACULA_BLUE = "\033[38;5;81m"
+    DRACULA_GREEN = "\033[38;5;84m"
+    DRACULA_YELLOW = "\033[38;5;228m"
+    DRACULA_ORANGE = "\033[38;5;215m"
+    DRACULA_RED = "\033[38;5;203m"
+    
+    # Nord theme colors
+    NORD_BLUE = "\033[38;5;67m"
+    NORD_CYAN = "\033[38;5;109m"
+    NORD_GREEN = "\033[38;5;108m"
+    NORD_RED = "\033[38;5;131m"
+    NORD_YELLOW = "\033[38;5;136m"
+    NORD_PURPLE = "\033[38;5;139m"
+    NORD_ORANGE = "\033[38;5;173m"
+    
     # Theme configuration
-    THEME = "cyberpunk"  # Options: "standard", "cyberpunk"
+    THEME = "cyberpunk"  # Options: "standard", "cyberpunk", "dracula", "nord"
     
     @classmethod
     def set_theme(cls, theme_name):
@@ -145,6 +165,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_BLUE
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_PURPLE
+            elif cls.THEME == "nord":
+                return cls.NORD_BLUE
             return cls.BLUE
         except (AttributeError, TypeError):
             return ""
@@ -155,6 +179,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_PINK
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_PINK
+            elif cls.THEME == "nord":
+                return cls.NORD_CYAN
             return cls.GREEN
         except (AttributeError, TypeError):
             return ""
@@ -165,6 +193,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_GREEN
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_GREEN
+            elif cls.THEME == "nord":
+                return cls.NORD_GREEN
             return cls.GREEN
         except (AttributeError, TypeError):
             return ""
@@ -175,6 +207,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_YELLOW
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_YELLOW
+            elif cls.THEME == "nord":
+                return cls.NORD_YELLOW
             return cls.YELLOW
         except (AttributeError, TypeError):
             return ""
@@ -185,6 +221,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.BRIGHT_RED
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_RED
+            elif cls.THEME == "nord":
+                return cls.NORD_RED
             return cls.RED
         except (AttributeError, TypeError):
             return ""
@@ -195,6 +235,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_TEAL
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_BLUE
+            elif cls.THEME == "nord":
+                return cls.NORD_CYAN
             return cls.CYAN
         except (AttributeError, TypeError):
             return ""
@@ -205,6 +249,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_PURPLE
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_PINK
+            elif cls.THEME == "nord":
+                return cls.NORD_PURPLE
             return cls.MAGENTA
         except (AttributeError, TypeError):
             return ""
@@ -215,6 +263,10 @@ class Colors:
         try:
             if cls.THEME == "cyberpunk":
                 return cls.CYBER_ORANGE
+            elif cls.THEME == "dracula":
+                return cls.DRACULA_ORANGE
+            elif cls.THEME == "nord":
+                return cls.NORD_ORANGE
             return cls.YELLOW
         except (AttributeError, TypeError):
             return ""
@@ -1001,11 +1053,17 @@ class OllamaClient:
                         return selection
                     print("❌ Please enter a valid model number or name")
             except KeyboardInterrupt:
-                # If user interrupts, use first model as default
-                print("\n🛑 Selection interrupted, using first available model")
-                default_model = model_options[0]
-                print(f"✅ Selected model: {default_model}")
-                return default_model
+                # If user interrupts, exit cleanly instead of trying to use a random model
+                print("\n🛑 Selection interrupted by keyboard interrupt (CTRL+C)")
+                print(f"{Colors.get_warning()}Exiting program.{Colors.RESET}")
+                sys.exit(0)
+                
+                # Previous behavior was to try gemma3:1b or fall back to first model - removed
+                
+                # Return the first model in the list
+                # if model_options:
+                #     return model_options[0]
+                # return "gemma:2b-instruct"  # Default fallback
     
     def generate(self, prompt: str, system_prompt: str = "", max_tokens: int = 2000) -> str:
         """Generate text using Ollama."""
@@ -2290,7 +2348,7 @@ class SmartGitCommitWorkflow:
                 
                 # Interactive mode prompts for confirmation
                 if interactive:
-                    print("\n{Colors.BOLD}Options:{Colors.RESET}")
+                    print(f"\n{Colors.BOLD}Options:{Colors.RESET}")
                     print(f"  [{Colors.GREEN}y{Colors.RESET}] Yes, commit these changes")
                     print(f"  [{Colors.BLUE}e{Colors.RESET}] Edit commit details before committing")
                     print(f"  [{Colors.YELLOW}s{Colors.RESET}] Skip this commit group")
@@ -2591,7 +2649,7 @@ def get_version():
             pass
         
         # Default version if all else fails
-        return "0.2.2"  # Fallback version
+        return "0.2.3"  # Fallback version
 
 
 def display_version():
@@ -2626,7 +2684,7 @@ def parse_args():
     parser.add_argument("--no-revert", action="store_true", help="Don't automatically revert staged changes on error")
     parser.add_argument("--no-parallel", action="store_true", help="Disable parallel processing for slower but more stable operation")
     parser.add_argument("--no-color", action="store_true", help="Disable colored output")
-    parser.add_argument("--theme", choices=["standard", "cyberpunk"], default="cyberpunk", help="Color theme to use (default: cyberpunk)")
+    parser.add_argument("--theme", choices=["standard", "cyberpunk", "dracula", "nord"], default="cyberpunk", help="Color theme to use (default: cyberpunk)")
     parser.add_argument("--version", action="store_true", help="Show version information and support links")
     return parser.parse_args()
 
@@ -2637,44 +2695,99 @@ def display_banner(use_color=True):
         primary = Colors.get_primary()
         secondary = Colors.get_secondary()
         accent = Colors.get_accent()
+        highlight = Colors.get_highlight()
         reset = Colors.RESET
     else:
-        primary = secondary = accent = reset = ""
+        primary = secondary = accent = highlight = reset = ""
     
     version = get_version()
     
+    # Set fixed width for banner to ensure alignment
+    banner_width = 130
+    
     if Colors.THEME == "cyberpunk":
         # Cyberpunk-themed ASCII art banner
-        banner = f"""
-{primary}  _______{secondary}  __  __{primary}        __{secondary}  __{primary}  ______{reset}     {accent} _________{reset}  {primary} ____{reset}  {secondary}  _______{reset}
-{primary} /       {secondary}|/  |/  |{primary}      /  |{secondary}/  |{primary}/      \\{reset}   {accent}/        {reset} {primary}/    \\{reset} {secondary}/       \\{reset}
-{primary}/$$$$$$$/{secondary} $$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$$$$${reset}  {primary}|{reset}  {accent}$$$$$$$/${reset}  {primary}/$$$$  |{reset}{secondary}$$$$$$$  |{reset}
-{primary}$$ |{reset}  {primary}___{reset}  {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ | {reset} {primary}$$ |{reset} {accent}$$ |{reset}      {primary}$$ | {reset} {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
-{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ |{reset}  {primary}$$ |{reset} {accent}$$ |____{reset}  {primary}$$ |{reset}  {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
-{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}      $$ |{secondary}$$ |{primary}$$ \\{reset}  {primary}$$ |{reset} {accent}$$      \\{reset} {primary}$$ \\{reset}  {primary}$$ |{reset}{secondary}$$ |  $$ |{reset}
-{primary}$$ |{reset}      {secondary}$$ |$$ |{primary}_____ $$ |{secondary}$$ |{primary}$${reset}  {primary}$${reset}  {primary}$$/|{reset} {accent}$$$$$$$/${reset} {primary}$${reset}  {primary}$${reset}  {primary}$$/|{reset}{secondary}$$ |  $$ |{reset}
-{primary}$$/|{reset}      {secondary}$$/|$$/|{primary}_____|$$/|{secondary}$$/|{primary}$${reset}    {primary}$${reset}  {primary}$${reset} {accent}$_{reset}        {primary}$${reset}    {primary}$${reset}  {primary}$${reset} {secondary}$$/|  $$/|{reset}
-                                    {primary}$$$${reset}    {primary}$${reset}  {primary}$${reset}            {primary}$$$${reset}    {primary}$${reset}  {primary}$${reset}            
-        {primary}Smart Git Commit v{version}{reset}
-"""
+        banner_lines = [
+            f"{primary} .--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--. {reset}",
+            f"{primary}/ .. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\{reset}",
+            f"{primary}\\ \\/\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ \\/ /{reset}",
+            f"{primary} \\/ /`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'\\/ / {reset}",
+            f"{primary} / /\\    {secondary}____                                __          ____        __          ____                                        __{primary}          / /\\ {reset}",
+            f"{primary}/ /\\ \\  {secondary}/\\  _`\\                             /\\ \\__      /\\  _`\\   __/\\ \\__      /\\  _`\\                                   __/\\ \\__{primary}      / /\\ \\{reset}",
+            f"{primary}\\ \\/ /  {secondary}\\ \\,\\L\\_\\    ___ ___      __    _ __\\ \\ ,_\\     \\ \\ \\L\\_\\/\\_\\ \\ ,_\\     \\ \\ \\/\\_\\    ___     ___ ___     ___ ___/\\_\\ \\ ,_\\{primary}     \\ \\/ /{reset}",
+            f"{primary} \\/ /    {secondary}\\/_\\__ \\  /' __` __`\\  /'__`\\ /\\`'__\\ \\ \\/      \\ \\ \\L_L\\/\\ \\ \\ \\/      \\ \\ \\/_/_  / __`\\ /' __` __`\\ /' __` __`\\/\\ \\ \\ \\/{primary}      \\/ / {reset}",
+            f"{primary} / /\\      {secondary}/\\ \\L\\ \\/\\ \\/\\ \\/\\ \\/\\ \\L\\.\\\\ \\ \\/ \\ \\ \\_      \\ \\ \\/, \\ \\ \\ \\ \\_      \\ \\ \\L\\ \\/\\ \\L\\ \\/\\ \\/\\ \\/\\ \\/\\ \\/\\ \\/\\ \\ \\ \\ \\ \\__{primary}     / /\\ {reset}",
+            f"{primary}/ /\\ \\     {secondary}\\ `\\____\\ \\_\\ \\_\\ \\_\\ \\__/.\\_\\ \\_\\  \\ \\__\\      \\ \\____/\\ \\_\\ \\__\\      \\ \\____/\\ \\____/\\ \\_\\ \\_\\ \\_\\ \\_\\ \\_\\ \\_\\ \\_\\ \\__\\{primary}   / /\\ \\{reset}",
+            f"{primary}\\ \\/ /      {secondary}\\/_____/\\/_/\\/_/\\/_/\\/__/\\/_/\\/_/   \\/__/       \\/___/  \\/_/\\/__/       \\/___/  \\/___/  \\/_/\\/_/\\/_/\\/_/\\/_/\\/_/\\/_/\\/__/{primary}   \\ \\/ /{reset}",
+            f"{primary} \\/ /                                                                                                                                    \\/ / {reset}",
+            f"{accent} / /\\.--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--..--./ /\\ {reset}",
+            f"{accent}/ /\\ \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\.. \\/\\ \\{reset}",
+            f"{accent}\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `'\\ `' /{reset}",
+            f"{accent} `--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--'`--' {reset}",
+            f"{reset}        {primary}Smart Git Commit v{version}{reset}"
+        ]
+    elif Colors.THEME == "dracula":
+        # Dracula-themed banner with gothic style
+        banner_lines = [
+            f"{primary}   ▄████████{reset}  {highlight}  ▄▄▄▄███▄▄▄▄      ▄████████{reset}    {secondary}  ▄████████     ███{reset}    {primary} ▄████████  ▄█      ███{reset} ",
+            f"{primary}  ███    ███{reset} {highlight}▄██▀▀▀███▀▀▀██▄   ███    ███{reset}    {secondary} ███    ███ ▀█████████▄{reset} {primary}███    ███ ███  ▀█████████▄{reset}",
+            f"{primary}  ███    █▀{reset}  {highlight}███   ███   ███   ███    ███{reset}    {secondary} ███    █▀     ▀███▀▀██{reset} {primary}███    ███ ███▌    ▀███▀▀██{reset}",
+            f"{primary}  ███{reset}       {highlight}███   ███   ███   ███    ███{reset}    {secondary} ███           ███   ▀{reset} {primary}███    ███ ███▌     ███   ▀{reset}",
+            f"{accent}▀███████████{reset} {highlight}███   ███   ███ ▀███████████{reset}    {secondary} ███         ▄███████████{reset}{primary}▀███████████ ███▌     ███{reset}",
+            f"{accent}         ███{reset} {highlight}███   ███   ███   ███    ███{reset}    {secondary} ███    █▄  ███    ███{reset}    {primary}   ███ ███      ███{reset}",
+            f"{accent}   ▄█    ███{reset} {highlight}███   ███   ███   ███    ███{reset}    {secondary} ███    ███ ███    ███{reset}    {primary}   ███ ███      ███{reset}",
+            f"{accent} ▄████████▀{reset}  {highlight} ▀█   ███   █▀    ███    █▀{reset}     {secondary} ████████▀   ▀█████▀{reset}     {primary}   █▀  █▀      ▄████▀{reset}",
+            f"{reset}                                                                                     ",
+            f"{reset}        {primary}Smart Git Commit v{version}{reset}"
+        ]
+    elif Colors.THEME == "nord":
+        # Nord-themed banner with icy style
+        banner_lines = [
+            f"{primary}  ▄▀▀▀ █▄ ▄█ ▄▀▀▄ █▀▀▄ ▀█▀{reset}    {secondary}  ▄▀▀▄ █ ▀█▀{reset}    {accent}  ▄▀▀▀ ▄▀▀▄ █▄ ▄█ █▄ ▄█ █ ▀█▀{reset}",
+            f"{primary} ▀▀▀█ █ █ █ █▄▄█ █▄▄▀  █ {reset}    {secondary}  █    █  █ {reset}    {accent}  █    █  █ █ █ █ █ █ █  █ {reset}",
+            f"{primary} ▀▀▀  █   █ █  █ ▀  ▀▄ ▀ {reset}    {secondary}  ▀▄▄▀ ▀ ▀▀▀{reset}    {accent}  ▀▄▄▀ ▀▄▄▀ █   █ █   █ ▀ ▀▀▀{reset}",
+            f"{reset}                                                                     ",
+            f"{reset}               {highlight}╔═╗┬ ┬┌─┐┬─┐┌┬┐  ╔═╗┬┌┬┐  ╔═╗┌─┐┌┬┐┌┬┐┬┌┬┐{reset}",
+            f"{reset}               {highlight}╚═╗│ ││ │├┬┘ │   ║ ╦│ │   ║  │ │││││││ │ {reset}",
+            f"{reset}               {highlight}╚═╝└─┘└─┘┴└─ ┴   ╚═╝┴ ┴   ╚═╝└─┘┴ ┴┴ ┴ ┴ {reset}",
+            f"{reset}                                                                     ",
+            f"{reset}        {primary}Smart Git Commit v{version}{reset}"
+        ]
     else:
-        # Standard banner for non-cyberpunk theme
-        banner = f"""
-{primary}  _____                      _     _____ _ _      _____ ____  __  __ __  __ _____ _{reset}
-{primary} / ____|                    | |   / ____(_) |    / ____|___ \\|  \\/  |  \\/  |_   _| |{reset}
-{secondary}| (___  _ __ ___   __ _ _ __| |_ | |  __ _| |_  | |      __) | \\  / | \\  / | | | | |{reset}
-{secondary} \\___ \\| '_ ` _ \\ / _` | '__| __|| | |_ | | __| | |     |__ <| |\\/| | |\\/| | | | | |{reset}
-{primary} ____) | | | | | | (_| | |  | |_ | |__| | | |_  | |____ ___) | |  | | |  | |_| |_|_|{reset}
-{primary}|_____/|_| |_| |_|\\__,_|_|   \\__| \\_____|_|\\__|  \\_____|____/|_|  |_|_|  |_|_____|_){reset}
-                                                                           
-        {primary}Smart Git Commit v{version}{reset}
-"""
+        # Standard banner with improved alignment
+        banner_lines = [
+            f"{primary}  _____  __  __            _____  _______    _____ _____ _______    _____ ____  __  __ __  __ _____ _______ {reset}",
+            f"{primary} / ____||  \\/  |    /\\    |  __ \\|__   __|  / ____|_   _|__   __|  / ____|___ \\|  \\/  |  \\/  |_   _|__   __|{reset}",
+            f"{secondary}| (___  | \\  / |   /  \\   | |__) |  | |    | |  __  | |    | |    | |      __) | \\  / | \\  / | | |    | |   {reset}",
+            f"{secondary} \\___ \\ | |\\/| |  / /\\ \\  |  _  /   | |    | | |_ | | |    | |    | |     |__ <| |\\/| | |\\/| | | |    | |   {reset}",
+            f"{primary} ____) || |  | | / ____ \\ | | \\ \\   | |    | |__| |_| |_   | |    | |____ ___) | |  | | |  | |_| |_   | |   {reset}",
+            f"{primary}|_____/ |_|  |_|/_/    \\_\\|_|  \\_\\  |_|     \\_____|_____|  |_|     \\_____|____/|_|  |_|_|  |_|_____|  |_|   {reset}",
+            f"{reset}",
+            f"{primary}                                 Smart Git Commit v{version}{reset}"
+        ]
     
-    print(banner)
-    print(f"{accent}╔══════════════════════════════════════════════════════════════════╗{reset}")
-    print(f"{accent}║ {primary}AI-powered Git workflow{reset} for {secondary}intelligent{reset} commit messages {accent}║{reset}")
-    print(f"{accent}╚══════════════════════════════════════════════════════════════════╝{reset}")
-    print()
+    # Print each line of the banner
+    print("")  # Start with a blank line
+    for line in banner_lines:
+        print(line)
+    print("")  # Add spacing
+    
+    # Create box with fixed width
+    box_width = 60
+    
+    # Top border
+    print(f"{accent}╔{'═' * (box_width - 2)}╗{reset}")
+    
+    # Message
+    message = f" {primary}AI-powered Git workflow{reset} for {secondary}intelligent{reset} commit messages "
+    padding = box_width - len(message.replace(primary, "").replace(secondary, "").replace(reset, "")) - 2
+    left_padding = padding // 2
+    right_padding = padding - left_padding
+    print(f"{accent}║{' ' * left_padding}{primary}AI-powered Git workflow{reset} for {secondary}intelligent{reset} commit messages{' ' * right_padding}{accent}║{reset}")
+    
+    # Bottom border
+    print(f"{accent}╚{'═' * (box_width - 2)}╝{reset}")
+    print("")  # End with a blank line
 
 
 def print_section_header(title, use_color=True):
@@ -2683,22 +2796,44 @@ def print_section_header(title, use_color=True):
         primary = Colors.get_primary()
         secondary = Colors.get_secondary()
         accent = Colors.get_accent()
+        highlight = Colors.get_highlight()
         reset = Colors.RESET
     else:
-        primary = secondary = accent = reset = ""
+        primary = secondary = accent = highlight = reset = ""
     
+    # Fixed width for all section headers
     width = 60
+    
+    print("")  # Add spacing before section header
+    
     if Colors.THEME == "cyberpunk":
-        print(f"\n{accent}┌{'─' * (width - 2)}┐{reset}")
-        print(f"{accent}│{reset} {primary}{title}{reset}{' ' * (width - len(title) - 4)}{accent}│{reset}")
-        print(f"{accent}└{'─' * (width - 2)}┘{reset}")
+        # Cyberpunk-themed section header with box drawing characters
+        print(f"{accent}┏━━━┫{primary} {title} {accent}┣{'━' * (width - len(title) - 10)}┓{reset}")
+        print(f"{accent}┗{'━' * (width - 2)}┛{reset}")
+    elif Colors.THEME == "dracula":
+        # Dracula-themed section header with gothic style
+        print(f"{primary}▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄{reset}")
+        print(f"{accent}██ {highlight}{title} {accent}{'█' * (width - len(title) - 6)}██{reset}")
+        print(f"{primary}▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀{reset}")
+    elif Colors.THEME == "nord":
+        # Nord-themed section header with icy style
+        print(f"{primary}╭─────────{secondary}[ {title} ]{primary}{'─' * (width - len(title) - 12)}╮{reset}")
+        print(f"{primary}╰{'─' * (width - 2)}╯{reset}")
     else:
-        print(f"\n{primary}===== {title} ====={reset}")
+        # Standard theme section header
+        print(f"{primary}═════[ {title} ]{'═' * (width - len(title) - 10)}{reset}")
+    
+    print("")  # Add spacing after section header
 
 
 def main():
     """Run the Smart Git Commit workflow."""
     args = parse_args()
+    
+    # Set logging level based on verbose flag
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+        logger.debug("Verbose mode enabled - showing debug messages")
     
     # Show version and exit if requested
     if args.version:
