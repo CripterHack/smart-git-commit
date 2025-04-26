@@ -112,7 +112,8 @@ usage: smart-git-commit [-h] [--repo-path REPO_PATH] [--non-interactive]
                         [--ollama-host OLLAMA_HOST] 
                         [--ollama-model OLLAMA_MODEL] [--no-ai]
                         [--timeout TIMEOUT] [--verbose] [--skip-hooks]
-                        [--no-revert] [--version]
+                        [--no-revert] [--no-parallel] [--no-color]
+                        [--version]
 
 Smart Git Commit Workflow with Ollama Integration
 
@@ -126,10 +127,12 @@ options:
   --ollama-model OLLAMA_MODEL
                         Model to use for Ollama (will prompt if not specified)
   --no-ai               Disable AI-powered analysis
-  --timeout TIMEOUT     Timeout in seconds for HTTP requests (default: 10)
+  --timeout TIMEOUT     Timeout in seconds for HTTP requests (default: 60)
   --verbose             Show verbose debug output
   --skip-hooks          Skip Git hooks when committing (useful if pre-commit is not installed)
   --no-revert           Don't automatically revert staged changes on error
+  --no-parallel         Disable parallel processing for slower but more stable operation
+  --no-color            Disable colored output
   --version             Show version information and support links
 ```
 
@@ -290,17 +293,18 @@ smart-git-commit --repo-path /path/to/your/repository
 #### Connection Timeouts
 - If you experience connection timeouts with Ollama, you can adjust the timeout parameter:
   ```bash
-  # Increase the timeout to 30 seconds
-  smart-git-commit --timeout 30
+  # Increase the timeout to 100 seconds
+  smart-git-commit --timeout 100
   ```
 - For slow networks or large models, a longer timeout may be necessary
 
 #### Error: "No module named pre_commit"
 - This occurs when your repository has pre-commit hooks configured but the pre-commit Python module is not installed
 - Solutions:
-  1. Install pre-commit: `pip install pre-commit`
-  2. Skip the hooks: `smart-git-commit --skip-hooks`
-  3. Remove pre-commit hooks from the repository if not needed
+  1. Smart Git Commit will now automatically detect this issue and skip hooks (with a notice)
+  2. Install pre-commit: `pip install pre-commit`
+  3. Skip the hooks manually: `smart-git-commit --skip-hooks`
+  4. Remove pre-commit hooks from the repository if not needed
 
 ### Command-Line Debugging
 
@@ -399,6 +403,21 @@ MIT
 - [Ollama](https://github.com/ollama/ollama) for the local LLM capabilities
 
 # Changelog
+
+## 0.2.1 (2025-04-26)
+- Fixed critical issue with file staging where git was incorrectly processing filenames with status indicators
+- Improved git staging process with proper handling of files with special characters or dashes
+- Enhanced error handling during file staging operations with better reporting
+- Added intelligent auto-detection of pre-commit hook availability to avoid errors without manual flag
+- Improved user experience with automatic hook skipping when pre_commit module is missing
+- Added informative error messages with actionable solutions for pre-commit issues
+- Enhanced terminal output with ANSI colors for improved readability
+- Added color support detection with graceful fallback for unsupported terminals
+- Improved Windows compatibility with better path handling for file staging
+- Added --no-color flag for environments that don't support color output
+- Enhanced progress indicators with file staging progress bar
+- Improved cross-platform path handling with better slash normalization
+- Increased default timeout from 30 to 60 seconds for more reliable operation with large repositories
 
 ## 0.2.0 (2025-04-25)
 - Major enhancement to component detection for modern tech stacks and architectures
