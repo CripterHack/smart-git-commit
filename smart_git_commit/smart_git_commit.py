@@ -2497,10 +2497,43 @@ def main() -> int:
     # Show version info and exit if requested
     if args.version:
         display_version()
+        return 0
     
     # Configure logging level
     if args.verbose:
         logger.setLevel(logging.DEBUG)
+    
+    # Early git status check to avoid unnecessary Ollama loading
+    try:
+        print(f"\n{Colors.BLUE}🔍 Checking for changes in repository...{Colors.RESET}")
+        # Simple check if git is installed and repository exists
+        result = subprocess.run(
+            ["git", "status", "--porcelain"],
+            cwd=args.repo_path,
+            capture_output=True,
+            text=True,
+            encoding='utf-8',
+            errors='replace'
+        )
+        
+        if result.returncode != 0:
+            print(f"\n{Colors.RED}❌ Error: Not a git repository or git command failed.{Colors.RESET}")
+            print(f"Please ensure you're in a git repository and git is installed.")
+            return 1
+            
+        # Check if there are any changes to commit
+        if not result.stdout.strip():
+            print(f"\n{Colors.GREEN}✅ No changes to commit. Working directory is clean.{Colors.RESET}")
+            return 0
+            
+        # Proceed only if there are changes
+        change_count = len([line for line in result.stdout.splitlines() if line.strip()])
+        print(f"{Colors.GREEN}✅ Found {change_count} changed files in repository.{Colors.RESET}")
+        logger.debug(f"Changes detected in repository ({change_count} files). Proceeding with analysis.")
+        
+    except Exception as e:
+        print(f"\n{Colors.RED}❌ Error checking git status: {str(e)}{Colors.RESET}")
+        return 1
     
     # Print welcome message
     print(f"\n{'=' * 60}")
@@ -2619,12 +2652,11 @@ def main() -> int:
                 print("\nSolutions:")
                 print(f"  1. {Colors.CYAN}Install pre-commit: pip install pre-commit{Colors.RESET}")
                 print(f"  2. {Colors.CYAN}Run with hooks skipped: smart-git-commit --skip-hooks{Colors.RESET}")
-                return 1
             else:
                 logger.error(f"Failed to execute commits: {str(e)}")
                 print(f"\n{Colors.RED}❌ ERROR during commit execution: {str(e)}{Colors.RESET}\n")
-                return 1
-            
+            return 1
+        
     except KeyboardInterrupt:
         print(f"\n\n{Colors.YELLOW}🛑 Operation cancelled by user.{Colors.RESET}")
         if workflow and not args.no_revert:
