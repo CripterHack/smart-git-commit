@@ -24,6 +24,7 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
+.ignore/
 
 # PyInstaller
 #  Usually these files are written by a python script from a template
@@ -54,9 +55,11 @@ coverage.xml
 
 # Environments
 .env
+.env.*
 .venv
 env/
 venv/
+env/
 ENV/
 env.bak/
 venv.bak/
@@ -68,8 +71,9 @@ venv.bak/
 *.swo
 *~
 
-# macOS specific
+# macOS/Linux specific
 .DS_Store
+Thumbs.db
 
 # Log files
 *.log 
