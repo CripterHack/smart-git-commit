@@ -1,0 +1,43 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Git Integration
+
+Smart Git Commit provides several ways to integrate with Git workflows.
+
+## Git Utilities
+The [smart_git_commit/git_utils.py](mdc:smart_git_commit/git_utils.py) module contains:
+- Functions for interacting with Git repositories
+- Methods for fetching file status and diffs
+- Utilities for processing Git output
+- Path normalization for cross-platform compatibility
+
+## Hooks Integration
+Git hooks integration is provided through:
+- [smart_git_commit/hooks.py](mdc:smart_git_commit/hooks.py): Main hooks management
+- [smart_git_commit/hook.py](mdc:smart_git_commit/hook.py): Core hook implementation
+- [smart_git_commit/husky.py](mdc:smart_git_commit/husky.py): Integration with Husky for Node.js projects
+
+Key hook features include:
+1. **Pre-commit Hooks**: Run before committing to validate changes
+2. **Prepare-commit-msg Hooks**: Update commit messages with AI-generated content
+3. **Post-commit Hooks**: Execute actions after successful commits
+4. **Hook Installation**: Automatic setup of hooks in Git repositories
+5. **Husky Compatibility**: Integration with existing Husky configurations
+
+## Commit Squashing
+The [smart_git_commit/squash.py](mdc:smart_git_commit/squash.py) module provides:
+- Functions for identifying related commits that can be squashed
+- Multiple squashing strategies (semantic, conventional, time-based)
+- AI-powered semantic analysis for determining commit relationships
+- Interactive squashing workflows
+
+## Security Layer
+The security features scan for sensitive data in commits:
+- Detection of common sensitive files (keys, credentials, etc.)
+- Pattern matching for API keys, passwords, and tokens
+- Interactive confirmation for potentially sensitive files
+- Automatic exclusion of risky files from commits
+

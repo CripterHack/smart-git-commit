@@ -1,0 +1,45 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Commit Workflow Process
+
+The Smart Git Commit workflow processes changes through several stages to create logical, well-structured commits.
+
+## Core Workflow
+The main workflow is implemented in [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py) through the `SmartGitCommitWorkflow` class:
+
+1. **Loading Changes**: `load_changes()` method detects all modified, added, and deleted files
+2. **Analysis**: Files are analyzed for language, component, and importance
+3. **Grouping**: Related changes are organized into logical commit groups
+4. **Message Generation**: Conventional commit messages are created for each group
+5. **Execution**: Changes are staged and committed
+
+## Change Grouping
+The [smart_git_commit/commit_group.py](mdc:smart_git_commit/commit_group.py) module handles:
+- The `CommitGroup` class that represents a collection of related files
+- Logic for assigning conventional commit types
+- Formatting of commit messages following standards
+
+## Commit Types
+Defined in [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py) through the `CommitType` enum:
+- `feat`: New features
+- `fix`: Bug fixes
+- `docs`: Documentation changes
+- `style`: Code style changes
+- `refactor`: Code refactoring
+- `perf`: Performance improvements
+- `test`: Test additions or changes
+- `chore`: Maintenance tasks
+- `ci`: CI configuration changes
+- `build`: Build system changes
+
+## Commit Execution
+The workflow handles:
+- Staging files appropriately through Git
+- Creating temporary commit message files
+- Executing Git commit commands
+- Handling pre-commit hooks
+- Error recovery if commits fail
+

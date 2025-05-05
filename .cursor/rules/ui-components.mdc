@@ -1,0 +1,42 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# UI Components
+
+Smart Git Commit offers both a CLI interface and a Text-based User Interface (TUI).
+
+## Terminal Interface
+The terminal interface is provided through:
+- [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py): Main CLI command processing
+- [smart_git_commit/colors.py](mdc:smart_git_commit/colors.py): Provides color theming for terminal output
+
+Key terminal UI features:
+- Color themes (standard, cyberpunk, dracula, nord, monokai)
+- Progress indicators and loading spinners
+- Interactive prompts for commit review and editing
+- ASCII art banners for visual appeal
+
+## Text-based User Interface (TUI)
+The TUI is implemented in [smart_git_commit/tui.py](mdc:smart_git_commit/tui.py) using the Textual library:
+
+1. **Main Screen**: Entry point showing repository status and available actions
+2. **Commit Screen**: Displays commit groups with file details and message editing
+3. **Settings Screen**: Configuration management for AI, themes, and behavior
+4. **Template Editor**: Interface for creating and editing commit templates
+5. **Welcome Screen**: First-time setup wizard for configuration
+
+## CLI Wizard
+The CLI setup wizard in [smart_git_commit/cli_wizard.py](mdc:smart_git_commit/cli_wizard.py):
+- Guides first-time users through configuration
+- Provides interactive AI provider selection
+- Helps configure model settings and default behavior
+
+## Theme System
+The [smart_git_commit/colors.py](mdc:smart_git_commit/colors.py) module provides:
+- Theme-specific color palettes
+- ANSI color output with terminal capability detection
+- Formatting utilities for headers, messages, and UI elements
+- Colorized output for error messages, warnings, and success messages
+

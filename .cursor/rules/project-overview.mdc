@@ -1,0 +1,30 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# Smart Git Commit - Project Overview
+
+Smart Git Commit is an AI-powered Git workflow tool that intelligently analyzes code changes, groups them into logical commits, and generates detailed conventional commit messages.
+
+## Core Files
+- [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py): Main workflow implementation
+- [smart_git_commit/__init__.py](mdc:smart_git_commit/__init__.py): Package initialization and exports
+- [smart_git_commit/__main__.py](mdc:smart_git_commit/__main__.py): Entry point for CLI execution
+- [setup.py](mdc:setup.py): Package installation configuration
+
+## Key Components
+- [smart_git_commit/tui.py](mdc:smart_git_commit/tui.py): Text-based User Interface implementation
+- [smart_git_commit/config.py](mdc:smart_git_commit/config.py): Configuration management
+- [smart_git_commit/hooks.py](mdc:smart_git_commit/hooks.py): Git hook integration
+- [smart_git_commit/squash.py](mdc:smart_git_commit/squash.py): Commit squashing functionality
+- [smart_git_commit/processor.py](mdc:smart_git_commit/processor.py): Commit message processing
+- [smart_git_commit/git_utils.py](mdc:smart_git_commit/git_utils.py): Git utility functions
+- [smart_git_commit/colors.py](mdc:smart_git_commit/colors.py): Theme and color management
+
+## Utility Components
+- [smart_git_commit/commit_group.py](mdc:smart_git_commit/commit_group.py): Commit grouping logic
+- [smart_git_commit/cli_wizard.py](mdc:smart_git_commit/cli_wizard.py): CLI setup wizard
+- [smart_git_commit/husky.py](mdc:smart_git_commit/husky.py): Husky integration for hooks
+- [smart_git_commit/hook.py](mdc:smart_git_commit/hook.py): Core hook implementation
+

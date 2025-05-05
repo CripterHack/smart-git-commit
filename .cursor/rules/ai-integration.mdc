@@ -1,0 +1,36 @@
+---
+description: 
+globs: 
+alwaysApply: false
+---
+# AI Integration
+
+This project integrates with AI models through two main providers to power its intelligent analysis features.
+
+## Ollama Integration
+- [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py) contains the `OllamaClient` class
+- The client connects to a local Ollama server (default: http://localhost:11434)
+- Features include model listing, completions, and request timeout management
+- Used for analyzing code changes, grouping related files, and generating commit messages
+
+## OpenAI Integration
+- [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py) also contains the `OpenAIClient` class
+- Provides an alternative to Ollama using OpenAI's API
+- Supports environment-based API key configuration
+- Models include standard GPT options like gpt-3.5-turbo and gpt-4
+
+## AI Workflows
+- [smart_git_commit/squash.py](mdc:smart_git_commit/squash.py) uses AI for semantic commit similarity analysis
+- [smart_git_commit/processor.py](mdc:smart_git_commit/processor.py) uses AI for generating commit messages
+- The primary workflow in [smart_git_commit/smart_git_commit.py](mdc:smart_git_commit/smart_git_commit.py) uses AI for:
+  - Change importance assessment
+  - Logical file grouping
+  - Commit message generation
+  - Component detection
+
+## Configuration
+- AI providers can be configured via command line arguments
+- Configuration can be managed through the TUI settings
+- Default settings are stored in configuration files
+- The system gracefully falls back to non-AI modes when AI is unavailable
+
