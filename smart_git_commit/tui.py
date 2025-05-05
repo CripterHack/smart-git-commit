@@ -12,19 +12,29 @@ import asyncio
 from typing import List, Dict, Any, Optional, Set, Tuple
 
 from textual.app import App, ComposeResult
-from textual.widgets import Header, Footer, Button, Static, Input, Label
+from textual.widgets import Header, Footer, Button, Static, Input, Label, Select, ListView
 from textual.containers import Container, Horizontal, Vertical, Grid
-from textual.widgets import DataTable, RadioSet, RadioButton, Switch, Select
+from textual.widgets import DataTable, RadioSet, RadioButton, Switch
 from textual.screen import Screen
 from textual.binding import Binding
 from textual import events
 from textual.reactive import reactive
+from textual.message import Message
+from textual.widgets import TextArea
+from textual.validation import Integer, ValidationResult
 
 from .config import get_config, Configuration
 from .smart_git_commit import (
     Colors, CommitType, GitChange, CommitGroup, 
-    SecurityScanner, SmartGitCommitWorkflow
+    SecurityScanner, SmartGitCommitWorkflow, OllamaClient, OpenAIClient
 )
+
+
+class ThemeChanged(Message):
+    """Message sent when the theme is changed."""
+    def __init__(self, theme: str) -> None:
+        super().__init__()
+        self.theme = theme
 
 
 class ThemeSelect(Static):
@@ -62,12 +72,16 @@ class ThemeSelect(Static):
             # Update theme in configuration
             config = get_config()
             config.set("theme", theme)
-            config.save()
+            try:
+                config.save()
+            except Exception as e:
+                self.app.notify(f"Error saving theme config: {e}", title="Config Error", severity="error")
+
             self.current_theme = theme
             
             # Apply theme to Colors class
             Colors.set_theme(theme)
-            self.app.post_message(events.Message(sender=self, name="theme_changed", theme=theme))
+            self.app.post_message(ThemeChanged(theme))
 
 
 class CommitTemplateScreen(Screen):
@@ -111,6 +125,12 @@ class CommitTemplateScreen(Screen):
         
         active_template = self.config.get("active_template", "default")
         
+        # Ensure active_template is a string
+        if not isinstance(active_template, str):
+            self.app.notify(f"Warning: active_template is {type(active_template).__name__}, not string. Using default.", title="Config Warning")
+            active_template = "default"
+            self.config.set("active_template", active_template)
+        
         for name, template in self.templates.items():
             is_active = "✓" if name == active_template else ""
             table.add_row(name, template["subject_template"], is_active)
@@ -132,24 +152,47 @@ class CommitTemplateScreen(Screen):
         if table.cursor_row is not None:
             template_name = table.get_row_at(table.cursor_row)[0]
             if template_name != "default":
-                if self.config.remove_commit_template(template_name):
-                    self.config.save()
-                    table.remove_row(table.cursor_row)
+                try:
+                    if self.config.remove_commit_template(template_name):
+                        self.config.save()
+                        table.remove_row(table.cursor_row)
+                    else:
+                        self.app.notify("Failed to remove template.", title="Error", severity="error")
+                except Exception as e:
+                    self.app.notify(f"Error deleting template: {e}", title="Error", severity="error")
     
     def action_set_active(self) -> None:
         """Action to set the active template."""
         table = self.query_one("#templates_table", DataTable)
         if table.cursor_row is not None:
             template_name = table.get_row_at(table.cursor_row)[0]
-            if self.config.set_active_template(template_name):
-                self.config.save()
+            
+            # Ensure we're working with a string
+            if not isinstance(template_name, str):
+                self.app.notify(f"Warning: Template name is {type(template_name).__name__}, not string.", title="Config Warning")
+                return
                 
-                # Update active indicators
-                active_template = self.config.get("active_template", "default")
-                for row in range(table.row_count):
-                    name = table.get_row_at(row)[0]
-                    is_active = "✓" if name == active_template else ""
-                    table.update_cell(row, 2, is_active)
+            try:
+                if self.config.set_active_template(template_name):
+                    self.config.save()
+                    
+                    # Update active indicators
+                    active_template = self.config.get("active_template", "default")
+                    
+                    # Double-check active_template is a string
+                    if not isinstance(active_template, str):
+                        self.app.notify(f"Warning: active_template is {type(active_template).__name__}, not string. Using default.", title="Config Warning")
+                        active_template = "default"
+                        self.config.set("active_template", active_template)
+                    
+                    for row in range(table.row_count):
+                        name = table.get_row_at(row)[0]
+                        is_active = "✓" if name == active_template else ""
+                        table.update_cell(row, 2, is_active)
+                else:
+                    self.app.notify("Failed to set active template.", title="Config Error", severity="error")
+            except Exception as e:
+                 self.app.notify(f"Error setting active template: {e}", title="Config Error", severity="error")
 
 
 class TemplateEditScreen(Screen):
@@ -249,10 +292,12 @@ class TemplateEditScreen(Screen):
         
         # Add or update the template
         config.add_commit_template(name, subject, body, footer)
-        config.save()
-        
-        # Return to template list
-        self.app.pop_screen()
+        try:
+            config.save()
+            # Return to template list
+            self.app.pop_screen()
+        except Exception as e:
+            self.app.notify(f"Error saving template: {e}", title="Config Error", severity="error")
 
 
 class SettingsScreen(Screen):
@@ -266,6 +311,7 @@ class SettingsScreen(Screen):
     def __init__(self, name: str = "settings"):
         super().__init__(name=name)
         self.config = get_config()
+        self.ollama_client = None
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -274,84 +320,186 @@ class SettingsScreen(Screen):
             yield Label("Settings", classes="title")
             
             with Vertical(id="settings_form"):
-                # Theme selection
-                yield ThemeSelect(name="theme_select")
+                # AI Provider Settings
+                yield Label("AI Provider", classes="section_title")
+                yield Select(
+                    [(value, value.capitalize()) for value in ["ollama", "openai", "none"]],
+                    id="ai_provider",
+                    value=self.config.get("ai_provider", "ollama")
+                )
                 
-                # Security scanning
-                with Horizontal():
-                    yield Label("Enable Security Scanning")
-                    yield Switch(value=self.config.get("security_scan", True), id="security_scan")
+                # Ollama Settings
+                with Container(id="ollama_settings"):
+                    yield Label("Ollama Settings", classes="subsection_title")
+                    yield Label("Ollama Host")
+                    yield Input(
+                        value=self.config.get("ollama_host", "http://localhost:11434"),
+                        placeholder="http://localhost:11434",
+                        id="ollama_host"
+                    )
+                    yield Label("Ollama Model")
+                    yield Select([], id="ollama_model")
+                    yield Label("Status")
+                    yield Label("Waiting to connect...", id="ollama_status")
                 
-                # AI settings
-                with Horizontal():
-                    yield Label("Use AI for Commit Analysis")
-                    yield Switch(value=self.config.get("use_ai", True), id="use_ai")
+                # OpenAI Settings
+                with Container(id="openai_settings"):
+                    yield Label("OpenAI Settings", classes="subsection_title")
+                    yield Label("OpenAI API Key")
+                    yield Input(
+                        value=self.config.get("openai_api_key", ""),
+                        placeholder="sk-...",
+                        id="openai_api_key",
+                        password=True
+                    )
+                    yield Label("OpenAI Model")
+                    yield Input(
+                        value=self.config.get("openai_model", "gpt-3.5-turbo"),
+                        placeholder="gpt-3.5-turbo",
+                        id="openai_model"
+                    )
                 
-                # Ollama settings
-                yield Label("Ollama Host")
-                yield Input(value=self.config.get("ollama_host", "http://localhost:11434"), id="ollama_host")
-                
-                yield Label("Ollama Model (leave empty for auto-selection)")
-                yield Input(value=self.config.get("ollama_model", "") or "", id="ollama_model")
-                
-                # Performance settings
-                with Horizontal():
-                    yield Label("Enable Parallel Processing")
-                    yield Switch(value=self.config.get("parallel", True), id="parallel")
-                
-                yield Label("Timeout (seconds)")
-                yield Input(value=str(self.config.get("timeout", 60)), id="timeout")
-                
-                # Git hooks
-                with Horizontal():
-                    yield Label("Skip Git Hooks")
-                    yield Switch(value=self.config.get("skip_hooks", False), id="skip_hooks")
+                # General Settings
+                yield Label("General Settings", classes="section_title")
+                yield Label("Security Scan")
+                yield Switch(
+                    value=self.config.get("security_scan", True),
+                    id="security_scan"
+                )
+                yield Label("Theme")
+                yield ThemeSelect(id="theme_select")
             
             with Horizontal(id="settings_buttons"):
                 yield Button("Save", id="save_settings", variant="primary")
-                yield Button("Reset to Defaults", id="reset_settings", variant="error")
+                yield Button("Cancel", id="cancel", variant="default")
         
         yield Footer()
     
+    def on_mount(self) -> None:
+        """Called when the screen is mounted."""
+        # Set initial visibility for provider-specific settings
+        self._update_provider_settings()
+        # Fetch available Ollama models
+        asyncio.create_task(self._fetch_ollama_models())
+
+    async def _fetch_ollama_models(self) -> None:
+        """Fetch available Ollama models asynchronously."""
+        try:
+            select = self.query_one("#ollama_model", Select)
+            select.set_options([("", "Loading models...")])
+            
+            # Get Ollama host from input
+            host_input = self.query_one("#ollama_host", Input)
+            host = host_input.value
+            
+            # Create Ollama client
+            client = OllamaClient(host=host)
+            models = await asyncio.to_thread(client.get_available_models)
+            
+            if models:
+                # Create options from models
+                options = [(model, model) for model in models]
+                select.set_options(options)
+                
+                # Set current value if it exists in the options
+                current_model = self.config.get("ollama_model")
+                if current_model and current_model in models:
+                    select.value = current_model
+                elif models:
+                    select.value = models[0]
+                    
+                # Update status if label exists
+                status_label = self.query_one("#ollama_status", Label, default=None)
+                if status_label:
+                    status_label.update("Connected successfully, models loaded")
+            else:
+                select.set_options([("", "No models found")])
+                status_label = self.query_one("#ollama_status", Label, default=None)
+                if status_label:
+                    status_label.update("No models found. Please install at least one model with 'ollama pull modelname'")
+        except Exception as e:
+            self.app.notify(f"Error fetching Ollama models: {str(e)}", title="Error", severity="error")
+            select = self.query_one("#ollama_model", Select)
+            select.set_options([("", "Error loading models")])
+            status_label = self.query_one("#ollama_status", Label, default=None)
+            if status_label:
+                status_label.update(f"Connection error: {str(e)}")
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle select changed events."""
+        if event.select.id == "ai_provider":
+            self._update_provider_settings()
+
+    def _update_provider_settings(self) -> None:
+        """Update visibility of provider-specific settings."""
+        provider = self.query_one("#ai_provider", Select).value
+        
+        # Update Ollama settings visibility
+        ollama_container = self.query_one("#ollama_settings", Container)
+        ollama_container.display = provider == "ollama"
+        
+        # Update OpenAI settings visibility
+        openai_container = self.query_one("#openai_settings", Container)
+        openai_container.display = provider == "openai"
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""
         if event.button.id == "save_settings":
             self.action_save()
-        elif event.button.id == "reset_settings":
-            self.config.reset()
-            self.config.save()
-            self.app.push_screen("settings")  # Refresh the screen
-    
+        elif event.button.id == "cancel":
+            self.app.pop_screen()
+
     def on_switch_changed(self, event: Switch.Changed) -> None:
-        """Handle switch toggle events."""
+        """Handle switch changed events."""
         if event.switch.id == "security_scan":
             self.config.set("security_scan", event.value)
-        elif event.switch.id == "use_ai":
-            self.config.set("use_ai", event.value)
-        elif event.switch.id == "parallel":
-            self.config.set("parallel", event.value)
-        elif event.switch.id == "skip_hooks":
-            self.config.set("skip_hooks", event.value)
-    
+
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle input change events."""
-        if event.input.id == "ollama_host":
-            self.config.set("ollama_host", event.value)
-        elif event.input.id == "ollama_model":
-            self.config.set("ollama_model", event.value or None)
-        elif event.input.id == "timeout":
-            try:
-                timeout = int(event.value)
-                self.config.set("timeout", timeout)
-            except ValueError:
-                pass
-    
+        """Handle input changed events."""
+        if event.input.id in ["ollama_host", "openai_api_key", "openai_model"]:
+            self.config.set(event.input.id, event.value)
+
     def action_save(self) -> None:
-        """Action to save the settings."""
-        if self.config.save():
+        """Save settings and return to the previous screen."""
+        try:
+            # Save AI provider
+            provider_select = self.query_one("#ai_provider", Select)
+            self.config.set("ai_provider", provider_select.value)
+            
+            # Save Ollama settings
+            if provider_select.value == "ollama":
+                ollama_host = self.query_one("#ollama_host", Input).value
+                self.config.set("ollama_host", ollama_host)
+                
+                ollama_model_select = self.query_one("#ollama_model", Select)
+                if ollama_model_select.value:
+                    self.config.set("ollama_model", ollama_model_select.value)
+            
+            # Save OpenAI settings
+            elif provider_select.value == "openai":
+                openai_api_key = self.query_one("#openai_api_key", Input).value
+                openai_model = self.query_one("#openai_model", Input).value
+                
+                if openai_api_key:
+                    self.config.set("openai_api_key", openai_api_key)
+                
+                if openai_model:
+                    self.config.set("openai_model", openai_model)
+            
+            # Save general settings
+            security_scan = self.query_one("#security_scan", Switch).value
+            self.config.set("security_scan", security_scan)
+            
+            # Save config
+            self.config.save()
+            
+            # Notify success
             self.app.notify("Settings saved successfully", title="Success")
-        else:
-            self.app.notify("Failed to save settings", title="Error")
+            
+            # Return to previous screen
+            self.app.pop_screen()
+        except Exception as e:
+            self.app.notify(f"Error saving settings: {str(e)}", title="Error", severity="error")
 
 
 class WelcomeScreen(Screen):
@@ -367,160 +515,307 @@ class WelcomeScreen(Screen):
         self.current_step = 0
         self.total_steps = 4
         self.config = get_config()
+        self.ollama_client = None
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
         
         with Container(id="welcome_container"):
-            yield Label("Welcome to Smart Git Commit!", classes="title")
-            yield Label("Let's set up your configuration.", classes="subtitle")
+            yield Label("Welcome to Smart Git Commit", classes="title")
+            yield Label("Let's set up your configuration", classes="subtitle")
             
-            with Container(id="step_container"):
-                # Step 1: Theme
-                with Container(id="step_1", classes="step current"):
-                    yield Label("Step 1: Choose a Theme", classes="step_title")
-                    yield ThemeSelect(name="welcome_theme_select")
+            # Step 1: AI Provider
+            with Container(id="step_1", classes="step current"):
+                yield Label("Step 1: Choose AI Provider", classes="section_title")
+                yield Label("Select how you want to power the AI analysis:")
                 
-                # Step 2: AI Configuration
-                with Container(id="step_2", classes="step"):
-                    yield Label("Step 2: AI Configuration", classes="step_title")
+                with RadioSet(id="ai_provider"):
+                    yield RadioButton("Ollama (Local models)", id="provider_ollama", value=True)
+                    yield Label("- Fast, privacy-focused, runs locally")
+                    yield Label("- Requires Ollama to be installed: https://ollama.ai")
+                    yield Label("- Limited by local hardware resources")
                     
-                    with Vertical():
-                        with Horizontal():
-                            yield Label("Use AI for Commit Analysis")
-                            yield Switch(value=self.config.get("use_ai", True), id="welcome_use_ai")
-                        
-                        yield Label("Ollama Host")
-                        yield Input(value=self.config.get("ollama_host", "http://localhost:11434"), 
-                                   id="welcome_ollama_host")
-                        
-                        yield Label("Ollama Model (leave empty for auto-selection)")
-                        yield Input(value=self.config.get("ollama_model", "") or "", 
-                                   id="welcome_ollama_model")
-                
-                # Step 3: Security Settings
-                with Container(id="step_3", classes="step"):
-                    yield Label("Step 3: Security Settings", classes="step_title")
+                    yield RadioButton("OpenAI (API)", id="provider_openai")
+                    yield Label("- High quality analysis and suggestions")
+                    yield Label("- Requires an OpenAI API key")
+                    yield Label("- Costs based on API usage")
                     
-                    with Vertical():
-                        with Horizontal():
-                            yield Label("Enable Security Scanning")
-                            yield Switch(value=self.config.get("security_scan", True), 
-                                        id="welcome_security_scan")
-                        
-                        yield Label("Security scanning helps prevent sensitive data from being committed.")
-                
-                # Step 4: Commit Templates
-                with Container(id="step_4", classes="step"):
-                    yield Label("Step 4: Commit Templates", classes="step_title")
-                    
-                    with Vertical():
-                        yield Label("Choose a default commit template style:")
-                        
-                        with RadioSet(id="welcome_template"):
-                            yield RadioButton("Default", value="default", 
-                                           id="welcome_template_default")
-                            yield RadioButton("Conventional", value="conventional", 
-                                           id="welcome_template_conventional")
-                            yield RadioButton("Detailed", value="detailed", 
-                                           id="welcome_template_detailed")
-                        
-                        yield Label("You can customize templates later in Settings.")
+                    yield RadioButton("None (Disable AI)", id="provider_none")
+                    yield Label("- Use rule-based analysis only")
+                    yield Label("- No AI-powered features")
+                    yield Label("- Fastest option, no external dependencies")
             
+            # Step 2a: Ollama Configuration
+            with Container(id="step_2a", classes="step"):
+                yield Label("Step 2: Ollama Configuration", classes="section_title")
+                yield Label("Configure Ollama settings:")
+                
+                yield Label("Ollama Host")
+                yield Input(
+                    value="http://localhost:11434",
+                    placeholder="http://localhost:11434",
+                    id="ollama_host"
+                )
+                
+                yield Label("Ollama Model")
+                yield Select([], id="ollama_model")
+                
+                yield Label("Status")
+                yield Label("Checking connection...", id="ollama_status")
+            
+            # Step 2b: OpenAI Configuration
+            with Container(id="step_2b", classes="step"):
+                yield Label("Step 2: OpenAI Configuration", classes="section_title")
+                yield Label("Configure OpenAI settings:")
+                
+                yield Label("OpenAI API Key")
+                yield Input(
+                    placeholder="sk-...",
+                    id="openai_api_key",
+                    password=True
+                )
+                
+                yield Label("OpenAI Model")
+                yield Input(
+                    value="gpt-3.5-turbo",
+                    placeholder="gpt-3.5-turbo",
+                    id="openai_model"
+                )
+            
+            # Step 3: Additional Settings
+            with Container(id="step_3", classes="step"):
+                yield Label("Step 3: Additional Settings", classes="section_title")
+                
+                yield Label("Security Scan")
+                yield Switch(value=True, id="security_scan")
+                yield Label("Detect and exclude sensitive data from commits")
+                
+                yield Label("Theme")
+                yield ThemeSelect(id="theme_select")
+            
+            # Navigation buttons
             with Horizontal(id="navigation_buttons"):
-                yield Button("Previous", id="prev_button", disabled=True)
-                yield Button("Next", id="next_button")
-                yield Button("Finish", id="finish_button", variant="primary", disabled=True)
+                yield Button("< Previous", id="prev", disabled=True)
+                yield Button("Next >", id="next")
+                yield Button("Finish", id="finish", disabled=True)
         
         yield Footer()
-    
+
     def on_mount(self) -> None:
-        """Called when the screen is mounted."""
-        # Select the current template in the radio set
-        active_template = self.config.get("active_template", "default")
-        radio_button = self.query_one(f"#welcome_template_{active_template}", RadioButton)
-        if radio_button:
-            radio_button.value = True
-    
+        """Set up the screen when mounted."""
+        # Initialize the config
+        if not hasattr(self, "config"):
+            self.config = get_config()
+        
+        self.current_step = 1
+        self.total_steps = 3
+        
+        # Load existing settings if available
+        self._load_current_settings()
+        
+        # Start Ollama model fetch if Ollama is selected
+        if self.query_one("#provider_ollama", RadioButton).value:
+            asyncio.create_task(self._fetch_ollama_models())
+        
+        # Update step visibility
+        self._update_step_visibility()
+
+    async def _fetch_ollama_models(self) -> None:
+        """Fetch available Ollama models asynchronously."""
+        try:
+            select = self.query_one("#ollama_model", Select)
+            select.set_options([("", "Loading models...")])
+            
+            # Get Ollama host from input
+            host_input = self.query_one("#ollama_host", Input)
+            host = host_input.value
+            
+            # Create Ollama client
+            client = OllamaClient(host=host)
+            models = await asyncio.to_thread(client.get_available_models)
+            
+            if models:
+                # Create options from models
+                options = [(model, model) for model in models]
+                select.set_options(options)
+                
+                # Set current value if it exists in the options
+                current_model = self.config.get("ollama_model")
+                if current_model and current_model in models:
+                    select.value = current_model
+                elif models:
+                    select.value = models[0]
+                    
+                # Update status if label exists
+                status_label = self.query_one("#ollama_status", Label, default=None)
+                if status_label:
+                    status_label.update("Connected successfully, models loaded")
+            else:
+                select.set_options([("", "No models found")])
+                status_label = self.query_one("#ollama_status", Label, default=None)
+                if status_label:
+                    status_label.update("No models found. Please install at least one model with 'ollama pull modelname'")
+        except Exception as e:
+            self.app.notify(f"Error fetching Ollama models: {str(e)}", title="Error", severity="error")
+            select = self.query_one("#ollama_model", Select)
+            select.set_options([("", "Error loading models")])
+            status_label = self.query_one("#ollama_status", Label, default=None)
+            if status_label:
+                status_label.update(f"Connection error: {str(e)}")
+
+    def _load_current_settings(self) -> None:
+        """Load current settings from config if available."""
+        try:
+            # Load AI provider
+            provider = self.config.get("ai_provider", "ollama")
+            if provider == "ollama":
+                self.query_one("#provider_ollama", RadioButton).value = True
+            elif provider == "openai":
+                self.query_one("#provider_openai", RadioButton).value = True
+            elif provider == "none":
+                self.query_one("#provider_none", RadioButton).value = True
+            
+            # Load Ollama settings
+            ollama_host = self.config.get("ollama_host")
+            if ollama_host:
+                self.query_one("#ollama_host", Input).value = ollama_host
+            
+            # Load OpenAI settings
+            openai_api_key = self.config.get("openai_api_key")
+            if openai_api_key:
+                self.query_one("#openai_api_key", Input).value = openai_api_key
+                
+            openai_model = self.config.get("openai_model")
+            if openai_model:
+                self.query_one("#openai_model", Input).value = openai_model
+            
+            # Load security scan setting
+            security_scan = self.config.get("security_scan", True)
+            self.query_one("#security_scan", Switch).value = security_scan
+        except Exception as e:
+            self.app.notify(f"Error loading settings: {str(e)}", title="Warning", severity="warning")
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle select changed events."""
+        if event.select.id == "ollama_model":
+            self.config.set("ollama_model", event.value)
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press events."""
-        if event.button.id == "prev_button":
-            self.action_prev()
-        elif event.button.id == "next_button":
+        if event.button.id == "next":
             self.action_next()
-        elif event.button.id == "finish_button":
+        elif event.button.id == "prev":
+            self.action_prev()
+        elif event.button.id == "finish":
             self._complete_setup()
-    
+
     def on_radio_set_changed(self, event: RadioSet.Changed) -> None:
-        """Handle radio set change events."""
-        if event.radio_set.id == "welcome_template":
-            self.config.set("active_template", event.value)
-    
+        """Handle radio set changed events."""
+        if event.radio_set.id == "ai_provider":
+            selected_button = event.pressed
+            
+            # Update config based on selected provider
+            if selected_button.id == "provider_ollama":
+                self.config.set("ai_provider", "ollama")
+                # Fetch Ollama models
+                asyncio.create_task(self._fetch_ollama_models())
+            elif selected_button.id == "provider_openai":
+                self.config.set("ai_provider", "openai")
+            elif selected_button.id == "provider_none":
+                self.config.set("ai_provider", "none")
+            
+            # Update which step 2 to show (a for Ollama, b for OpenAI)
+            self._update_step_visibility()
+
     def on_switch_changed(self, event: Switch.Changed) -> None:
-        """Handle switch toggle events."""
-        if event.switch.id == "welcome_security_scan":
+        """Handle switch changed events."""
+        if event.switch.id == "security_scan":
             self.config.set("security_scan", event.value)
-        elif event.switch.id == "welcome_use_ai":
-            self.config.set("use_ai", event.value)
-    
+
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Handle input change events."""
-        if event.input.id == "welcome_ollama_host":
-            self.config.set("ollama_host", event.value)
-        elif event.input.id == "welcome_ollama_model":
-            self.config.set("ollama_model", event.value or None)
-    
+        """Handle input changed events."""
+        if event.input.id in ["ollama_host", "openai_api_key", "openai_model"]:
+            self.config.set(event.input.id, event.value)
+
     def _update_step_visibility(self) -> None:
-        """Update which step is visible based on current_step."""
-        for i in range(1, self.total_steps + 1):
-            step = self.query_one(f"#step_{i}", Container)
-            if i == self.current_step + 1:
-                step.add_class("current")
-                step.remove_class("hidden")
+        """Update which steps are visible based on current state."""
+        # Update current step container
+        for step in range(1, self.total_steps + 1):
+            step_container = self.query_one(f"#step_{step}", Container)
+            if step == self.current_step:
+                step_container.add_class("current")
+                step_container.remove_class("disabled")
             else:
-                step.remove_class("current")
-                step.add_class("hidden")
+                step_container.remove_class("current")
+                step_container.add_class("disabled")
         
-        # Update button states
-        prev_button = self.query_one("#prev_button", Button)
-        next_button = self.query_one("#next_button", Button)
-        finish_button = self.query_one("#finish_button", Button)
+        # Special handling for step 2 (AI provider specific)
+        if self.current_step == 2:
+            provider = "none"
+            if self.query_one("#provider_ollama", RadioButton).value:
+                provider = "ollama"
+            elif self.query_one("#provider_openai", RadioButton).value:
+                provider = "openai"
+            
+            # Show appropriate step 2 container
+            step_2a = self.query_one("#step_2a", Container)
+            step_2b = self.query_one("#step_2b", Container)
+            
+            if provider == "ollama":
+                step_2a.add_class("current")
+                step_2a.remove_class("disabled")
+                step_2b.remove_class("current")
+                step_2b.add_class("disabled")
+            elif provider == "openai":
+                step_2a.remove_class("current")
+                step_2a.add_class("disabled")
+                step_2b.add_class("current")
+                step_2b.remove_class("disabled")
+            else:
+                # Skip to step 3 if "none" is selected
+                self.current_step = 3
+                self._update_step_visibility()
         
-        prev_button.disabled = self.current_step == 0
+        # Update navigation buttons
+        prev_button = self.query_one("#prev", Button)
+        next_button = self.query_one("#next", Button)
+        finish_button = self.query_one("#finish", Button)
         
-        if self.current_step == self.total_steps - 1:
-            next_button.disabled = True
-            finish_button.disabled = False
-        else:
-            next_button.disabled = False
-            finish_button.disabled = True
-    
+        prev_button.disabled = self.current_step == 1
+        next_button.disabled = self.current_step == self.total_steps
+        finish_button.disabled = self.current_step != self.total_steps
+
     def action_next(self) -> None:
-        """Move to the next step."""
-        if self.current_step < self.total_steps - 1:
+        """Go to the next step."""
+        if self.current_step < self.total_steps:
             self.current_step += 1
             self._update_step_visibility()
-    
+
     def action_prev(self) -> None:
-        """Move to the previous step."""
-        if self.current_step > 0:
+        """Go to the previous step."""
+        if self.current_step > 1:
             self.current_step -= 1
             self._update_step_visibility()
-    
+
     def _complete_setup(self) -> None:
-        """Complete the setup and save settings."""
-        # Mark welcome as completed
-        self.config.set("welcome_completed", True)
-        
-        # Save all settings
-        if self.config.save():
-            self.app.notify("Setup completed successfully!", title="Welcome")
+        """Complete the setup process."""
+        try:
+            # Save the configuration
+            self.config.set("welcome_completed", True)
+            self.config.save()
             
-            # Switch to the main screen
+            # Mark the welcome as completed for this session
+            app = self.app
+            app.welcome_completed = True
+            
+            # Show success message
+            self.app.notify("Setup completed successfully", title="Success")
+            
+            # Go to the main screen
             self.app.pop_screen()
             self.app.push_screen("main")
-        else:
-            self.app.notify("Failed to save settings", title="Error")
+        except Exception as e:
+            self.app.notify(f"Error saving configuration: {str(e)}", title="Error", severity="error")
 
 
 class ChangesTable(Static):
@@ -582,7 +877,7 @@ class MainScreen(Screen):
         super().__init__(name=name)
         self.workflow = None
         self.changes = []
-        self.groups = []
+        self.commit_groups = []
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -612,40 +907,65 @@ class MainScreen(Screen):
         self.refresh_workflow()
     
     def refresh_workflow(self) -> None:
-        """Refresh the Git workflow and update UI."""
-        config = get_config()
-        self.workflow = SmartGitCommitWorkflow(
-            repo_path=".",
-            ollama_host=config.get("ollama_host", "http://localhost:11434"),
-            ollama_model=config.get("ollama_model"),
-            use_ai=config.get("use_ai", True),
-            timeout=config.get("timeout", 60),
-            skip_hooks=config.get("skip_hooks", False),
-            parallel=config.get("parallel", True),
-            security_scan=config.get("security_scan", True)
-        )
-        
-        # Load and analyze changes
+        """Refresh the workflow with the current configuration."""
         try:
-            self.workflow.load_changes()
-            if self.workflow.changes:
-                self.workflow.analyze_and_group_changes()
+            config = get_config()
+            
+            # Get repository path
+            repo_path = self.app.repo_path
+            
+            # Get AI provider and settings
+            ai_provider = config.get("ai_provider", "ollama")
+            use_ai = ai_provider != "none"
+            
+            # Get Ollama settings
+            ollama_host = config.get("ollama_host", "http://localhost:11434")
+            ollama_model = config.get("ollama_model")
+            
+            # Get OpenAI settings
+            openai_api_key = config.get("openai_api_key")
+            openai_model = config.get("openai_model", "gpt-3.5-turbo")
+            
+            # Get other settings
+            security_scan = config.get("security_scan", True)
+            skip_hooks = config.get("skip_hooks", False)
+            parallel = config.get("parallel", True)
+            timeout = config.get("timeout", 60)
+            
+            # Initialize workflow with all settings
+            self.workflow = SmartGitCommitWorkflow(
+                repo_path=repo_path,
+                use_ai=use_ai,
+                ai_provider=ai_provider,
+                ollama_host=ollama_host,
+                ollama_model=ollama_model,
+                openai_api_key=openai_api_key,
+                openai_model=openai_model,
+                security_scan=security_scan,
+                skip_hooks=skip_hooks,
+                parallel=parallel,
+                timeout=timeout
+            )
+            
+            # Load changes
+            with self.app.batch_update():
+                self.app.notify("Loading changes...", title="Status")
+                self.workflow.load_changes()
                 
-                # Update UI
-                self.changes = self.workflow.changes
-                self.groups = self.workflow.commit_groups
+                # Update changes table
+                self._update_changes_table()
                 
-                # Update tables
-                self._update_changes_table()
-                self._update_groups_table()
-            else:
-                self.app.notify("No changes to commit", title="Git Status")
-                self.changes = []
-                self.groups = []
-                self._update_changes_table()
-                self._update_groups_table()
+                # Analyze and group changes
+                if self.workflow.changes:
+                    self.app.notify("Analyzing changes...", title="Status")
+                    self.commit_groups = self.workflow.analyze_and_group_changes()
+                    self._update_groups_table()
+                else:
+                    self.commit_groups = []
+                    self.query_one("#groups_table > #groups_table", DataTable).clear()
+                    self.app.notify("No changes to commit", title="Status")
         except Exception as e:
-            self.app.notify(f"Error: {str(e)}", title="Git Error")
+            self.app.notify(f"Error refreshing workflow: {str(e)}", title="Error", severity="error")
     
     def _update_changes_table(self) -> None:
         """Update the changes table with current data."""
@@ -653,7 +973,7 @@ class MainScreen(Screen):
         table.clear()
         table.add_columns("Status", "Filename", "Component", "Sensitive")
         
-        for change in self.changes:
+        for change in self.workflow.changes if self.workflow else []:
             sensitive = "⚠️" if change.is_sensitive else ""
             table.add_row(change.status, change.filename, change.component, sensitive)
     
@@ -663,7 +983,7 @@ class MainScreen(Screen):
         table.clear()
         table.add_columns("Type", "Name", "Files", "Component")
         
-        for group in self.groups:
+        for group in self.commit_groups:
             table.add_row(
                 group.commit_type.value, 
                 group.name, 
@@ -696,7 +1016,7 @@ class MainScreen(Screen):
     
     def action_commit(self) -> None:
         """Action to start commit process."""
-        if not self.groups:
+        if not self.commit_groups:
             self.app.notify("No changes to commit", title="Git Status")
             return
         
@@ -704,7 +1024,7 @@ class MainScreen(Screen):
 
 
 class CommitScreen(Screen):
-    """Screen for executing commits."""
+    """Screen for committing changes."""
     
     BINDINGS = [
         Binding("escape", "app.pop_screen", "Back"),
@@ -714,7 +1034,8 @@ class CommitScreen(Screen):
     def __init__(self, name: str = "commit"):
         super().__init__(name=name)
         self.workflow = None
-        self.selected_group_index = 0
+        self.groups: List[CommitGroup] = []
+        self.selected_group_index = -1
     
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
@@ -746,12 +1067,19 @@ class CommitScreen(Screen):
     def on_mount(self) -> None:
         """Set up the screen when it's mounted."""
         # Get workflow from main screen
-        main_screen = self.app.query_one("MainScreen")
-        self.workflow = main_screen.workflow
-        self.groups = main_screen.groups
-        
+        try:
+            main_screen = self.app.query_one("MainScreen")
+            self.workflow = main_screen.workflow
+            self.groups = main_screen.commit_groups
+        except Exception as e:
+            self.app.notify(f"Error connecting to main screen: {str(e)}",
+                           title="Error", severity="error")
+            self.app.pop_screen()
+            return
+            
         # Set up commit groups table
         table = self.query_one("#commit_groups_table", DataTable)
+        table.clear()
         table.add_columns("Type", "Name", "Files")
         
         for idx, group in enumerate(self.groups):
@@ -783,9 +1111,36 @@ class CommitScreen(Screen):
                     change.component
                 )
             
-            # Update commit message
-            message = self.workflow._generate_ai_commit_message(group)
+            # Generate commit message
+            message = self._generate_commit_message(group)
             self.query_one("#commit_message", TextArea).text = message
+    
+    def _generate_commit_message(self, group: CommitGroup) -> str:
+        """Generate a commit message for the selected group."""
+        try:
+            # Use workflow's method if available
+            if hasattr(self.workflow, "_generate_commit_message"):
+                return self.workflow._generate_commit_message(group)
+            
+            # Fallback to basic message format
+            message = f"{group.commit_type.value}"
+            if group.name and group.name != "root":
+                message += f"({group.name})"
+            
+            message += f": Changes in {group.name}\n\n"
+            message += "Affected files:\n"
+            
+            for change in group.changes:
+                status_symbol = {
+                    'M': 'M', 'A': '+', 'D': '-', 'R': 'R',
+                    '??': '?'
+                }.get(change.status[:1], ' ')
+                message += f"- {status_symbol} {change.filename}\n"
+                
+            return message
+        except Exception as e:
+            self.app.notify(f"Error generating commit message: {str(e)}", title="Error", severity="error")
+            return f"commit({group.name}): Changes in {len(group.changes)} files"
     
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         """Handle row selection in the groups table."""
@@ -814,7 +1169,21 @@ class CommitScreen(Screen):
         group = self.groups[self.selected_group_index]
         message = self.query_one("#commit_message", TextArea).text
         
-        success = self.workflow._commit_changes(group, message)
+        success = False
+        try:
+            # Try to use workflow's commit method if available
+            if hasattr(self.workflow, "_commit_changes"):
+                success = self.workflow._commit_changes(group, message)
+            elif hasattr(self.workflow, "execute_commits"):
+                # Generic commit method
+                success = self._perform_commit(group, message)
+            else:
+                self.app.notify("Cannot perform commit: workflow missing required methods", 
+                               title="Commit Error", severity="error")
+                return
+        except Exception as e:
+             self.app.notify(f"Error during commit: {str(e)}", title="Git Commit Error", severity="error")
+             success = False
         
         if success:
             self.app.notify("Changes committed successfully", title="Git Commit")
@@ -842,17 +1211,97 @@ class CommitScreen(Screen):
                 self.app.pop_screen()
                 self.app.query_one("MainScreen").refresh_workflow()
         else:
-            self.app.notify("Failed to commit changes", title="Git Error")
+            self.app.notify("Failed to commit changes", title="Git Error", severity="error")
+            
+    def _perform_commit(self, group: CommitGroup, message: str) -> bool:
+        """Fallback method to perform a commit using workflow's basic methods."""
+        try:
+            # Stage files
+            if not hasattr(self.workflow, "_stage_files"):
+                self.app.notify("Cannot stage files: workflow missing required methods", 
+                               title="Commit Error", severity="error")
+                return False
+                
+            staging_success = self.workflow._stage_files(group.changes)
+            if not staging_success:
+                return False
+                
+            # Execute git commit
+            if not hasattr(self.workflow, "_execute_commit"):
+                self.app.notify("Cannot execute commit: workflow missing required methods", 
+                               title="Commit Error", severity="error")
+                return False
+                
+            return self.workflow._execute_commit(message)
+        except Exception as e:
+            self.app.notify(f"Error in commit process: {str(e)}", 
+                           title="Git Error", severity="error")
+            return False
 
 
-# Create importable classes to resolve undefined references
-class TextArea(Input):
-    """Text area widget with multi-line editing."""
+class SensitiveFileConfirmScreen(Screen):
+    """Modal screen for confirming inclusion of sensitive files."""
     
-    def __init__(self, value: str = "", *, id: str = None, language: str = None, classes: str = None):
-        super().__init__(value=value, id=id, classes=classes)
-        self.language = language
-        self.text = value
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel")
+    ]
+    
+    def __init__(self, name: str = "sensitive_confirm"):
+        super().__init__(name=name)
+        self.change = None
+        self.on_confirm = None
+        self.on_cancel = None
+    
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=True)
+        
+        with Container():
+            yield Label("⚠️ SECURITY WARNING ⚠️", classes="title warning")
+            
+            with Vertical(id="warning_details"):
+                yield Label("The following file has been flagged as potentially containing sensitive data:")
+                yield Label("", id="sensitive_filename", classes="sensitive_filename")
+                
+                yield Label("Reason:", classes="subsection_title")
+                yield Label("", id="sensitive_reason", classes="sensitive_reason")
+                
+                yield Label("", id="warning_message", classes="warning")
+                yield Label("Including sensitive data in commits can lead to security breaches.", classes="warning")
+                yield Label("Are you ABSOLUTELY SURE you want to include this file?", classes="warning")
+            
+            with Horizontal(id="confirmation_buttons"):
+                yield Button("No, Exclude This File (Recommended)", id="exclude_button", variant="primary")
+                yield Button("Yes, Include Despite Warning", id="include_button", variant="error")
+        
+        yield Footer()
+    
+    def on_mount(self) -> None:
+        """Update details when the screen is mounted."""
+        if self.change:
+            self.query_one("#sensitive_filename", Label).update(self.change.filename)
+            self.query_one("#sensitive_reason", Label).update(self.change.sensitive_reason)
+            
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button press events."""
+        if event.button.id == "include_button":
+            # Double confirmation with more explicit warning
+            self.query_one("#warning_message", Label).update("⚠️ FINAL WARNING: This is a high-security risk! ⚠️")
+            event.button.label = "Yes, I Understand the Risk (type CONFIRM)"
+            event.button.id = "final_confirm_button"
+        elif event.button.id == "final_confirm_button":
+            if self.on_confirm:
+                self.on_confirm()
+            self.app.pop_screen()
+        elif event.button.id == "exclude_button":
+            if self.on_cancel:
+                self.on_cancel()
+            self.app.pop_screen()
+    
+    def action_cancel(self) -> None:
+        """Handle escape key (cancel)."""
+        if self.on_cancel:
+            self.on_cancel()
+        self.app.pop_screen()
 
 
 class SmartGitCommitApp(App):
@@ -889,6 +1338,36 @@ class SmartGitCommitApp(App):
     
     Button.selected {
         background: $accent;
+    }
+    
+    .warning {
+        color: $error;
+        text-style: bold;
+    }
+    
+    .sensitive_filename {
+        background: $surface-lighten-1;
+        color: $text;
+        text-align: center;
+        padding: 1;
+        margin: 1 0;
+    }
+    
+    .sensitive_reason {
+        color: $text-muted;
+        margin: 1 0;
+    }
+    
+    #warning_details {
+        margin: 1 0;
+        padding: 1;
+        border: heavy $error;
+    }
+    
+    #confirmation_buttons {
+        width: 100%;
+        height: 3;
+        margin: 2 0;
     }
     
     #main_actions {
@@ -954,6 +1433,10 @@ class SmartGitCommitApp(App):
         height: 10;
         margin: 1 0;
     }
+    
+    Input.-invalid {
+        border: thick $error;
+    }
     """
     
     SCREENS = {
@@ -963,6 +1446,7 @@ class SmartGitCommitApp(App):
         "template_edit": TemplateEditScreen,
         "commit": CommitScreen,
         "welcome": WelcomeScreen,
+        "sensitive_confirm": SensitiveFileConfirmScreen,
     }
     
     BINDINGS = [
@@ -970,9 +1454,11 @@ class SmartGitCommitApp(App):
         Binding("f1", "help", "Help")
     ]
     
+    repo_path: str = "."
+    
     def on_mount(self) -> None:
         """Called when the app is mounted."""
-        # Check if welcome flow has been completed
+        # Restore original logic: Check if welcome flow has been completed
         config = get_config()
         if not config.get("welcome_completed", False):
             self.push_screen("welcome")
@@ -994,11 +1480,229 @@ class SmartGitCommitApp(App):
             title="Help"
         )
 
+    def action_quit(self) -> None:
+        """Clean up and exit the application."""
+        # Save configuration before exit
+        try:
+            config = get_config()
+            config.save()
+        except Exception as e:
+            self.notify(f"Error saving configuration: {str(e)}", title="Config Error")
+            
+        self.exit()
+        
+    def on_exception(self, exception: Exception) -> None:
+        """Handle any unhandled exceptions globally."""
+        # Log the exception or display it. Using notify for visibility.
+        import traceback
+        exc_info = traceback.format_exc()
+        self.notify(f"Unhandled Exception:\n{exc_info}", title="APP CRASH", timeout=20)
+        # Optionally, you might want to exit or log to a file here.
+        self.exit(1)
 
-def run_tui() -> None:
-    """Run the TUI application."""
-    app = SmartGitCommitApp()
-    app.run()
+
+def run_tui(repo_path: str = ".") -> int:
+    """
+    Run the Text-based User Interface (TUI).
+    
+    Args:
+        repo_path: Path to the git repository
+        
+    Returns:
+        Exit code (0 for success, non-zero for failure)
+    """
+    try:
+        # Try to import Textual
+        from textual.app import App
+        from textual.widgets import Header, Footer, Static, Button, ListView, Label
+        from textual.containers import Container, Horizontal, Vertical
+        from textual.screen import Screen
+        from textual.binding import Binding
+    except ImportError:
+        logger.error("Failed to import textual. Please install it: pip install textual")
+        print("Error: The TUI requires the 'textual' package.")
+        print("Please install it using: pip install textual")
+        return 1
+    
+    # Import our workflow
+    from .smart_git_commit import SmartGitCommitWorkflow, GitChange, CommitGroup
+    
+    class CommitScreen(Screen):
+        """Screen for committing changes."""
+        
+        BINDINGS = [
+            Binding("q", "quit", "Quit"),
+            Binding("r", "refresh", "Refresh"),
+            Binding("c", "commit", "Commit"),
+        ]
+        
+        def __init__(self, workflow: SmartGitCommitWorkflow):
+            """Initialize the commit screen."""
+            super().__init__()
+            self.workflow = workflow
+            self.commit_groups = []
+            self.selected_group_index = 0
+        
+        def on_mount(self) -> None:
+            """Handle the screen mount event."""
+            self.refresh_data()
+        
+        def refresh_data(self) -> None:
+            """Refresh the data from git."""
+            # Load changes
+            self.workflow.load_changes()
+            
+            # Analyze changes
+            self.commit_groups = self.workflow.analyze_and_group_changes()
+            
+            # Update UI
+            self.update_commit_groups()
+        
+        def update_commit_groups(self) -> None:
+            """Update the commit groups display."""
+            groups_list = self.query_one("#groups-list", ListView)
+            groups_list.clear()
+            
+            for i, group in enumerate(self.commit_groups):
+                groups_list.append(f"{group.commit_type.value}({group.name}): {len(group.changes)} files")
+            
+            if self.commit_groups:
+                groups_list.index = self.selected_group_index
+                self.update_group_details(self.selected_group_index)
+            else:
+                self.query_one("#group-details", Static).update("No changes to commit")
+        
+        def update_group_details(self, index: int) -> None:
+            """Update the details for the selected commit group."""
+            if not self.commit_groups:
+                return
+                
+            group = self.commit_groups[index]
+            
+            # Build details text
+            details = f"# {group.commit_type.value}({group.name})\n\n"
+            
+            details += "## Files:\n"
+            for change in group.changes:
+                status_symbol = {
+                    'M': '📝', 'A': '➕', 'D': '❌', 'R': '🔄',
+                    '??': '❓'
+                }.get(change.status[:1], '•')
+                details += f"- {status_symbol} {change.filename}\n"
+            
+            # Show commit message preview
+            details += "\n## Commit Message Preview:\n"
+            commit_message = self.workflow._generate_commit_message(group)
+            details += f"```\n{commit_message}\n```\n"
+            
+            self.query_one("#group-details", Static).update(details)
+        
+        def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+            """Handle list view highlighted event."""
+            self.selected_group_index = event.index
+            self.update_group_details(event.index)
+        
+        def action_refresh(self) -> None:
+            """Refresh the data."""
+            self.refresh_data()
+        
+        def action_commit(self) -> None:
+            """Commit the selected group."""
+            if not self.commit_groups:
+                self.notify("No changes to commit")
+                return
+                
+            group = self.commit_groups[self.selected_group_index]
+            
+            # Generate commit message
+            commit_message = self.workflow._generate_commit_message(group)
+            
+            # Commit changes
+            success = self.workflow._commit_changes(group, commit_message)
+            
+            if success:
+                self.notify(f"Committed: {group.commit_type.value}({group.name})")
+                # Refresh after commit
+                self.refresh_data()
+            else:
+                self.notify("Failed to commit changes")
+    
+    class SmartGitCommitApp(App):
+        """Smart Git Commit TUI Application."""
+        
+        TITLE = "Smart Git Commit"
+        CSS_PATH = "tui.css"
+        BINDINGS = [
+            Binding("q", "quit", "Quit"),
+            Binding("r", "refresh", "Refresh"),
+        ]
+        
+        def __init__(self, repo_path: str):
+            """Initialize the application."""
+            super().__init__()
+            self.repo_path = repo_path
+            
+            # Create workflow
+            self.workflow = SmartGitCommitWorkflow(repo_path=repo_path)
+        
+        def compose(self):
+            """Compose the app layout."""
+            yield Header()
+            
+            with Container():
+                with Horizontal():
+                    with Vertical(id="sidebar"):
+                        yield Label("Commit Groups")
+                        yield ListView(id="groups-list")
+                        yield Button("Commit Selected", id="commit-btn")
+                    
+                    with Vertical(id="main-content"):
+                        yield Static("No changes selected", id="group-details")
+            
+            yield Footer()
+        
+        def on_mount(self):
+            """Handle the app mount event."""
+            # Set up CSS if file doesn't exist
+            if not os.path.exists(self.CSS_PATH):
+                with open(self.CSS_PATH, "w") as f:
+                    f.write("""
+                    #sidebar {
+                        width: 30%;
+                        background: $panel;
+                    }
+                    
+                    #main-content {
+                        width: 70%;
+                        background: $surface;
+                    }
+                    
+                    #groups-list {
+                        height: 100%;
+                    }
+                    
+                    Button {
+                        width: 100%;
+                    }
+                    """)
+            
+            # Show the commit screen
+            self.push_screen(CommitScreen(self.workflow))
+            
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            """Handle button pressed event."""
+            if event.button.id == "commit-btn":
+                self.screen.action_commit()
+    
+    # Run the app
+    try:
+        app = SmartGitCommitApp(repo_path)
+        app.run()
+        return 0
+    except Exception as e:
+        logger.exception(f"Error running TUI: {str(e)}")
+        print(f"Error running TUI: {str(e)}")
+        return 1
 
 
 if __name__ == "__main__":
