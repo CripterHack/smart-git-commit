@@ -24,7 +24,7 @@ def run_tests(verbose=False, coverage=False):
     """Run the test suite."""
     # Configure test discovery
     test_loader = unittest.TestLoader()
-    test_dir = os.path.join(os.path.dirname(__file__), 'tests')
+    test_dir = os.path.dirname(__file__)
     
     if not os.path.exists(test_dir):
         print(f"Creating tests directory: {test_dir}")
